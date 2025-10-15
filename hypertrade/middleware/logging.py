@@ -1,0 +1,45 @@
+import logging
+import time
+import uuid
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
+from fastapi import Request
+
+from ..config import get_settings
+from ..security import _extract_client_ip
+
+
+class LoggingMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: ASGIApp):
+        super().__init__(app)
+        self.logger = logging.getLogger("uvicorn.error")
+
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        req_id = str(uuid.uuid4())
+        settings = get_settings()
+
+        client_ip = _extract_client_ip(request, settings.trust_forwarded_for) or "-"
+        method = request.method
+        path = request.url.path
+
+        response = None
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            status = response.status_code if response else 500
+            route = getattr(request.scope.get("route"), "path", path)
+            self.logger.info(
+                "%s %s -> %s %dms ip=%s",
+                method,
+                route,
+                status,
+                duration_ms,
+                client_ip
+            )
+            if response is not None:
+                response.headers["X-Request-ID"] = req_id
+                response.headers["X-Process-Time"] = f"{duration_ms}ms"

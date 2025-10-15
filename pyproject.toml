@@ -1,0 +1,26 @@
+[project]
+name = "hypertrade2-api"
+version = "0.1.0"
+description = "FastAPI REST app scaffold with Uvicorn"
+authors = [{ name = "Your Name" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.2.1",
+  "python-dotenv>=1.0.0",
+  "hyperliquid",
+  "jsonschema>=4.19.0"
+]
+
+[project.optional-dependencies]
+dev = []
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
