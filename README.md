@@ -1,11 +1,9 @@
-<img width="945" height="249" alt="image" src="https://github.com/user-attachments/assets/5a0fba52-b393-401b-a2ee-1c590ca9f4e5" />
+<img width="920" height="210" alt="image" src="https://github.com/user-attachments/assets/6823f906-3fc3-4999-a250-57acd154b7a7" />
 
 HyperTrade is a lightweight server that processes TradingView alerts to execute orders on Hyperliquid.
 
 It validates webhook payloads, enforces secret auth and IP whitelisting, and emits audit logs.  
 Use it as a reliable layer between TradingView strategies and your Hyperliquid sub-accounts.
-
-<img width="1503" height="244" alt="image" src="https://github.com/user-attachments/assets/99a93458-f25b-4a98-ba76-459b35ffe70f" />
 
 ## Features
 - TradingView‑compatible payloads with validation.
@@ -15,6 +13,8 @@ Use it as a reliable layer between TradingView strategies and your Hyperliquid s
 - Specify a different leverage per asset.
 - Health check at `GET /health`.
 - Simple config via env vars or `.env` (no external dotenv dependency).
+
+<img width="1503" height="244" alt="image" src="https://github.com/user-attachments/assets/99a93458-f25b-4a98-ba76-459b35ffe70f" />
 
 ## Rules for Sleeping at Night:
 
