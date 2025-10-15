@@ -1,9 +1,9 @@
 <img width="920" height="210" alt="image" src="https://github.com/user-attachments/assets/6823f906-3fc3-4999-a250-57acd154b7a7" />
 
-HyperTrade is a lightweight server that processes TradingView alerts to execute orders on Hyperliquid.
+**HyperTrade** is a lightweight server that processes **TradingView** alerts to execute orders on **Hyperliquid**.
 
 It validates webhook payloads, enforces secret auth and IP whitelisting, and emits audit logs.  
-Use it as a reliable layer between TradingView strategies and your Hyperliquid sub-accounts.
+Use it as a reliable layer between TradingView strategies and your **Hyperliquid sub-accounts**.
 
 ## Features
 - TradingView‑compatible payloads with validation.
