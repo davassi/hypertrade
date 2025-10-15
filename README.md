@@ -43,86 +43,47 @@ pip install --upgrade pip
 pip install fastapi uvicorn[standard] pydantic pydantic-settings python-dotenv
 ```
 
-Or add the dependencies from `pyproject.toml` to your environment manager of choice.
-
 ## Run
 
-Option 1: via Uvicorn
+Run via Uvicorn or module entrypoint
 
 ```bash
-uvicorn hypertrade.daemon:app --reload --port 8000
+uvicorn hypertrade.daemon:app --reload --port 9414
 ```
-
-Option 2: module entrypoint
 
 ```bash
 python -m hypertrade
 ```
 
-Open docs at `http://localhost:8000/docs` (Swagger UI) or `http://localhost:8000/redoc`.
-
 ## Environment Variables (required)
 
-The app will not start unless these are set (e.g., in `.env`):
+Hypertrade won't start unless these variables are set:
 
 - `HYPERTRADE_MASTER_ADDR`
 - `HYPERTRADE_API_WALLET_PRIV`
 - `HYPERTRADE_SUBACCOUNT_ADDR`
 
-Copy `.env.example` to `.env` and fill in the values:
+```bash
+export HYPERTRADE_MASTER_ADDR=0xYourMasterAddress
+export HYPERTRADE_API_WALLET_PRIV='your-private-key'
+export HYPERTRADE_SUBACCOUNT_ADDR=0xYourSubaccountAddress
+uvicorn hypertrade.daemon:app --port 9414
+```
+
+Or copy `.env.example` to `.env` and fill in the values:
 
 ```bash
 cp .env.example .env
 # edit .env and set real values
 ```
 
-### Set via shell (no .env)
-
-You can also set them directly in your shell and start the server.
-
-Bash/Zsh:
-
-```bash
-export HYPERTRADE_MASTER_ADDR=0xYourMasterAddress
-export HYPERTRADE_API_WALLET_PRIV='your-private-key'
-export HYPERTRADE_SUBACCOUNT_ADDR=0xYourSubaccountAddress
-uvicorn hypertrade.daemon:app --reload --port 8000
-```
-
-Bash/Zsh one-liner:
-
-```bash
-HYPERTRADE_MASTER_ADDR=0x... HYPERTRADE_API_WALLET_PRIV='...' HYPERTRADE_SUBACCOUNT_ADDR=0x... \
-  uvicorn hypertrade.daemon:app --reload --port 8000
-```
-
-### Troubleshooting
-
-- Verify envs are present in the current shell before starting:
-
-  ```bash
-  env | grep ^HYPERTRADE_
-  # Expect to see the three variables listed
-  ```
-
-- If you use `--reload`, the reloader inherits the current env. Make sure you export in the same shell you use to start Uvicorn.
-- If you prefer a file, use `.env` at the project root (already supported by the app), or pass an env one-liner:
-
-  ```bash
-  HYPERTRADE_MASTER_ADDR=0x... HYPERTRADE_API_WALLET_PRIV='...' HYPERTRADE_SUBACCOUNT_ADDR=0x... \
-    uvicorn app.main:app --reload --port 8000
-  ```
-
 ## Endpoints
 
 - `GET /health` – health check
 - `POST /webhook` – TradingView webhook (supports IP whitelist)
 
-## Configuration
 
-Environment variables are read via `hypertrade.config.Settings` and `.env` (optional). See `.env.example`.
-
-### IP Whitelisting (optional)
+### IP Whitelisting (optional but strongly suggested)
 
 Enable IP whitelisting for the TradingView webhook endpoint and set allowed IPs:
 
@@ -139,7 +100,7 @@ export HYPERTRADE_TRUST_FORWARDED_FOR=true
 
 You can apply the whitelist dependency to other routes using `require_ip_whitelisted()` from `hypertrade/security.py`.
 
-### Webhook Secret (optional)
+### Webhook Secret (optional but strongly suggested, part 2)
 
 For an extra authentication layer, set a shared secret and include it in the payload under `general.secret`.
 
@@ -149,47 +110,9 @@ Env:
 export HYPERTRADE_WEBHOOK_SECRET='your-shared-secret'
 ```
 
-Payload snippet:
-
-```json
-{
-  "general": {
-    "ticker": "...",
-    "exchange": "...",
-    "interval": "...",
-    "time": "...",
-    "timenow": "...",
-    "secret": "your-shared-secret"
-  }
-  // ... rest of payload ...
-}
-```
-
-Behavior:
-- If `HYPERTRADE_WEBHOOK_SECRET` is set, incoming requests must include `general.secret` matching it, or the request is rejected with 401.
-- If not set, the secret check is skipped.
-
-### Logging
-
-- Control log level via env var:
-
-  ```bash
-  export HYPERTRADE_LOG_LEVEL=INFO   # or DEBUG, WARNING, ERROR
-  ```
-
-- Requests are logged with method, route, status, duration, client IP, and request ID.
-- Response headers include `X-Request-ID` and `X-Process-Time` for tracing.
-
-### Hardening & Limits
-
-- `HYPERTRADE_MAX_PAYLOAD_BYTES` (default `65536`): reject requests larger than this size with 413.
-- `HYPERTRADE_ENABLE_TRUSTED_HOSTS` (default `false`): enable Trusted Host middleware.
-- `HYPERTRADE_TRUSTED_HOSTS` (default `*`): comma-separated list of allowed hosts when Trusted Host is enabled.
-- Webhook requires `Content-Type: application/json` and returns 415 otherwise.
-
 ### TradingView Webhook Payload
 
-Payload (TradingView template) with all the placeholders:
+Payload (TradingView template) with all the placeholders, including secret and leverage. Copy and paste it on TradingView Alert.
 
 ```json
 {
@@ -198,7 +121,9 @@ Payload (TradingView template) with all the placeholders:
     "exchange": "{{exchange}}",
     "interval": "{{interval}}",
     "time": "{{time}}",
-    "timenow": "{{timenow}}"
+    "timenow": "{{timenow}}",
+    "secret": "your-shared-secret",
+    "leverage": "5X"
   },
   "symbol_data": {
     "open": "{{open}}",
@@ -206,7 +131,6 @@ Payload (TradingView template) with all the placeholders:
     "high": "{{high}}",
     "low": "{{low}}",
     "volume": "{{volume}}",
-    "secret": "your-payload-secret"
   },
   "currency": {
     "quote": "{{syminfo.currency}}",
@@ -237,6 +161,30 @@ Notes:
 Validation:
 - Incoming JSON is validated against a JSON Schema and then parsed into a Pydantic model.
 - Schema enforces required sections and basic constraints (action enum, date-time fields, numeric fields).
+
+Behavior:
+- If `HYPERTRADE_WEBHOOK_SECRET` is set, incoming requests must include `general.secret` matching it, or the request is rejected with 401.
+- If not set, the secret check is skipped.
+
+### Logging
+
+- Control log level via env var:
+
+  ```bash
+  export HYPERTRADE_LOG_LEVEL=INFO   # or DEBUG, WARNING, ERROR
+  ```
+
+- Requests are logged with method, route, status, duration, client IP, and request ID.
+- Response headers include `X-Request-ID` and `X-Process-Time` for tracing.
+
+### Additional Security & Limits
+
+- `HYPERTRADE_MAX_PAYLOAD_BYTES` (default `65536`): reject requests larger than this size with 413.
+- `HYPERTRADE_ENABLE_TRUSTED_HOSTS` (default `false`): enable Trusted Host middleware.
+- `HYPERTRADE_TRUSTED_HOSTS` (default `*`): comma-separated list of allowed hosts when Trusted Host is enabled.
+- Webhook requires `Content-Type: application/json` and returns 415 otherwise.
+
+## Sequence diagram
 
 ```mermaid
 sequenceDiagram
