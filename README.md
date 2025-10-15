@@ -3,7 +3,7 @@
 
 HyperTrade is a lightweight server that processes TradingView alerts to execute orders on Hyperliquid.
 
-It validates webhook payloads, enforces secret auth and IP whitelisting, and emits audit logs.
+It validates webhook payloads, enforces secret auth and IP whitelisting, and emits audit logs.  
 Use it as a reliable layer between TradingView strategies and your Hyperliquid sub-accounts.
 
 ## Features
@@ -17,16 +17,16 @@ Use it as a reliable layer between TradingView strategies and your Hyperliquid s
 
 ## Rules for Sleeping at Night:
 
-1. One asset per sub-account.
+1. One asset per sub-account.  
 Each Hyperliquid sub-account must be dedicated to a single asset. This ensures isolated margin management and prevents cross-liquidation risks.
 
-2. Leverage Policy.
+2. Leverage Policy.  
 ALWAYS trade with a maximum leverage of 3x–5x in cross-margin mode to improve risk control. NEVER gamble with 10x–20x leverage.
 
-3. Defensive Capital
+3. Defensive Capital.  
 Keep a portion of idle funds as defensive capital. This reserve extends the liquidation range and protects the position during periods of volatility.
 
-4. Stop Loss
+4. Stop Loss.  
 Never be greedy. Always include a stop loss in your strategy, no matter what. 
 
 ## Requirements
