@@ -1,4 +1,7 @@
 # HyperTrade
+
+<img width="3254" height="634" alt="image" src="https://github.com/user-attachments/assets/841c4399-3299-4d6b-90f2-39b90a933f44" />
+
 <img width="1503" height="244" alt="image" src="https://github.com/user-attachments/assets/99a93458-f25b-4a98-ba76-459b35ffe70f" />
 
 
