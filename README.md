@@ -16,24 +16,26 @@ Use it as a reliable layer between TradingView strategies and your **Hyperliquid
 
 <img width="1503" height="244" alt="image" src="https://github.com/user-attachments/assets/99a93458-f25b-4a98-ba76-459b35ffe70f" />
 
-## Rules for Sleeping at Night:
+## Before using HyperTrade, 4 Rules for Sleeping at Night:
 
-1. One asset per sub-account.  
+1. **One asset per sub-account.**
 Each Hyperliquid sub-account must be dedicated to a single asset. This ensures isolated margin management and prevents cross-liquidation risks.
 
-2. Leverage Policy.  
+2. **Define a Leverage Policy.**  
 ALWAYS trade with a maximum leverage of 3x–5x in cross-margin mode to improve risk control. NEVER gamble with 10x–20x leverage.
 
-3. Defensive Capital.  
+3. **Deep Defensive Capital.**  
 Keep a portion of idle funds as defensive capital. This reserve extends the liquidation range and protects the position during periods of volatility.
 
-4. Stop Loss.  
+4. **Never forget a Stop Loss.**  
 Never be greedy. Always include a stop loss in your strategy, no matter what. 
 
 ## Requirements
 
 - Python 3.10+
 - Pip or your preferred package manager
+- An TradingView Account
+- A Hyperliquid sub-account.
 
 ## Install
 
