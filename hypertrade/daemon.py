@@ -13,7 +13,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 log = logging.getLogger("uvicorn.error")
 
-# Create and configure the FastAPI app
+# Change the port number and start the daemon with: 
+# 
+# $ uvicorn hypertrade.daemon:app --host 0.0.0.0 --port 9414
+#
 def create_daemon() -> FastAPI:
     
     # Configure baseline logging early (INFO until settings are loaded)
@@ -26,16 +29,9 @@ def create_daemon() -> FastAPI:
     try:  
         app.state.settings = settings
     except ValidationError as e:
-        env_map = {
-            "master_addr": "HYPERTRADE_MASTER_ADDR",
-            "api_wallet_priv": "HYPERTRADE_API_WALLET_PRIV",
-            "subaccount_addr": "HYPERTRADE_SUBACCOUNT_ADDR",
-        }
-        missing = [err.get("loc", ["?"])[0] for err in e.errors() if err.get("type") == "missing"]
-        missing_envs = [env_map.get(name, name) for name in missing]
         msg = (
             "Missing required environment variables: "
-            + ", ".join(missing_envs)
+            + ", ".join("HYPERTRADE_MASTER_ADDR","HYPERTRADE_API_WALLET_PRIV", "HYPERTRADE_SUBACCOUNT_ADDR")
             + ". Export them in your shell or set them in .env."
         )
         raise RuntimeError(msg) from e
@@ -54,7 +50,8 @@ def create_daemon() -> FastAPI:
         settings.log_level,
     )
     log.info("Loaded %d TV webhook IPs", len(settings.tv_webhook_ips or []))
-    # Startup banner
+    
+    # Showing our startup banner
     log_startup_banner(
         host=None,
         port=None,
@@ -63,7 +60,7 @@ def create_daemon() -> FastAPI:
         trust_xff=settings.trust_forwarded_for,
     )
 
-    # Routers
+    # Setting the Routers up
     app.include_router(health_router)
     app.include_router(webhooks_router)
 

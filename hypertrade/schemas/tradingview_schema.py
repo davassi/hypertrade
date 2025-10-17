@@ -8,12 +8,14 @@ TRADINGVIEW_SCHEMA = {
             "type": "object",
             "required": ["ticker", "exchange", "interval", "time", "timenow"],
             "properties": {
+                "strategy": {"type": "string", "minLength": 1},
                 "ticker": {"type": "string", "minLength": 1},
                 "exchange": {"type": "string", "minLength": 1},
                 "interval": {"type": "string", "minLength": 1},
                 "time": {"type": "string", "format": "date-time"},
                 "timenow": {"type": "string", "format": "date-time"},
-                "secret": {"type": "string", "minLength": 1}
+                "secret": {"type": "string", "minLength": 1},
+                "leverage": {"type": "string", "minLength": 1}
             },
             "additionalProperties": True
         },

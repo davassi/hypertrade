@@ -1,9 +1,8 @@
 <img width="920" height="210" alt="image" src="https://github.com/user-attachments/assets/6823f906-3fc3-4999-a250-57acd154b7a7" />
 
-**HyperTrade** is a lightweight server that processes **TradingView** alerts to execute orders on **Hyperliquid**.
+**HyperTrade** is a lightweight server that processes **TradingView** long/short alerts to execute orders on **Hyperliquid**, for automated algorithmic trading.
 
-It validates webhook payloads, enforces secret auth and IP whitelisting, and emits audit logs.  
-Use it as a reliable layer between TradingView strategies and your **Hyperliquid sub-accounts**.
+It validates webhook payloads, enforces secret auth and IP whitelisting, and emits audit logs. Use it as a reliable layer between **TradingView strategies** and your **Hyperliquid sub-accounts**.
 
 ## Features
 - TradingView‑compatible payloads with validation.
@@ -22,7 +21,7 @@ Use it as a reliable layer between TradingView strategies and your **Hyperliquid
 Each Hyperliquid sub-account must be dedicated to a single asset. This ensures isolated margin management and prevents cross-liquidation risks.
 
 2. **Define a Leverage Policy.**  
-ALWAYS trade with a maximum leverage of 3x–5x in cross-margin mode to improve risk control. NEVER gamble with 10x–20x leverage.
+ALWAYS trade with a maximum leverage of 3x–5x in cross-margin mode to improve risk control. NEVER gamble with a 10x–20x leverage.
 
 3. **Deep Defensive Capital.**  
 Keep a portion of idle funds as defensive capital. This reserve extends the liquidation range and protects the position during periods of volatility.
@@ -34,7 +33,7 @@ Never be greedy. Always include a stop loss in your strategy, no matter what.
 
 - Python 3.10+
 - Pip or your preferred package manager
-- An TradingView Account
+- A TradingView subscription.
 - A Hyperliquid sub-account.
 
 ## Install
@@ -116,11 +115,14 @@ export HYPERTRADE_WEBHOOK_SECRET='your-shared-secret'
 
 ### TradingView Webhook Payload
 
-Payload (TradingView template) with all the placeholders, including secret and leverage. Copy and paste it on TradingView Alert.
+Payload (TradingView template) with all the placeholders, including secret and leverage. Copy and paste it on as TradingView Alert.
+
+Don't forget to set up first the strategy name, the **"secret": "your-shared-secret"** and the leverage.
 
 ```json
 {
   "general": {
+    "strategy" : "your-strategy-name",
     "ticker": "{{ticker}}",
     "exchange": "{{exchange}}",
     "interval": "{{interval}}",
