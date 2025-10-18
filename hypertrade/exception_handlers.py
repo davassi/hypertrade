@@ -8,12 +8,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = logging.getLogger("uvicorn.error")
 
-
 def _extract_request_id(response_headers: dict[str, str] | None) -> str | None:
     if not response_headers:
         return None
     return response_headers.get("X-Request-ID")
-
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     log.warning("HTTPException %s %s -> %s", request.method, request.url.path, exc.status_code)
@@ -27,7 +25,6 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             }
         },
     )
-
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     log.warning("ValidationError on %s %s: %s", request.method, request.url.path, exc.errors())
@@ -43,7 +40,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         },
     )
 
-
 async def unhandled_exception_handler(request: Request, exc: Exception):
     log.exception("Unhandled exception on %s %s", request.method, request.url.path)
     return JSONResponse(
@@ -56,7 +52,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
             }
         },
     )
-
 
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
