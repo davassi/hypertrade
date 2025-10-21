@@ -28,7 +28,7 @@ class Currency(BaseModel):
 
 class Position(BaseModel):
     position_size: Decimal
-
+    
 class Order(BaseModel):
     action: str
     contracts: Decimal
