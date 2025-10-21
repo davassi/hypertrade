@@ -58,11 +58,12 @@ async def tradingview_webhook(request: Request, raw: dict = Body(...)) -> dict:
     )
     log.debug("Full webhook payload: %s", raw)
     
-    # Fourth: processing logic here (would be good to enqueue the job)
-    # Parse & map
+    # Fourth: processing logic here (TOOD: would be good to enqueue the job)
     signal = parse_signal(payload)
+    log.info("Parsed signal: %s", signal.value)
     symbol = payload.general.ticker.upper()
-    subaccount = _choose_subaccount(symbol)
+    log.info("TradingView ticker mapped to symbol: %s", symbol)
+    
     try:
         contracts = float(payload.order.contracts)
     except Exception:
@@ -73,7 +74,6 @@ async def tradingview_webhook(request: Request, raw: dict = Body(...)) -> dict:
 
     if side is None or signal == SignalType.NO_ACTION:
         log.info("No actionable signal. signal=%s payload_id=%s", signal.value, payload.order.id)
-        _mark_processed(payload.order.id)
         return JSONResponse({"status": "no_action", "signal": signal.value, "order_id": payload.order.id})
 
     # Execute plugging into Hyperliquid SDK 
@@ -87,6 +87,9 @@ async def tradingview_webhook(request: Request, raw: dict = Body(...)) -> dict:
     # Finally: build a response
     response = {
         "status": "ok",
+        "signal": signal.value,
+        "side": side.value,
+        "symbol": symbol,
         "ticker": payload.general.ticker,
         "exchange": payload.general.exchange,
         "action": payload.order.action,
@@ -99,12 +102,6 @@ async def tradingview_webhook(request: Request, raw: dict = Body(...)) -> dict:
     # TODO
     
     return response
-
-# Select a subaccount for the symbol; default to configured subaccount
-def _choose_subaccount(symbol: str) -> str:
-    from ..config import get_settings
-    settings = get_settings()
-    return settings.subaccount_addr
 
 # Check the webhook secret if configured in environment
 def secret_enforcement(request, raw):
@@ -177,7 +174,3 @@ def parse_signal(payload: TradingViewWebhook) -> SignalType:
         return SignalType.REVERSE_TO_SHORT
 
     return SignalType.NO_ACTION
-
-def _mark_processed(order_id: str) -> None:
-    # Placeholder for idempotency or audit logging
-    log.debug("Marked processed order_id=%s", order_id)
