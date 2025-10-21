@@ -18,23 +18,27 @@ log = logging.getLogger("uvicorn.error")
 # $ uvicorn hypertrade.daemon:app --host 0.0.0.0 --port 9414
 #
 def create_daemon() -> FastAPI:
-    
-    # Configure baseline logging early (INFO until settings are loaded)
-    settings = get_settings()
-    setup_logging(settings.log_level)
 
+    # Create app first so we can attach settings or fail cleanly
     app = FastAPI(title="Hypertrade Daemon", version="1.0.0")
-    
-    # Load and attach settings at startup; raise a clear error if env is missing
-    try:  
-        app.state.settings = settings
+
+    # Load settings and configure logging; provide clear error if env missing
+    try:
+        settings = get_settings()
     except ValidationError as e:
         msg = (
             "Missing required environment variables: "
-            + ", ".join("HYPERTRADE_MASTER_ADDR","HYPERTRADE_API_WALLET_PRIV", "HYPERTRADE_SUBACCOUNT_ADDR")
+            + ", ".join([
+                "HYPERTRADE_MASTER_ADDR",
+                "HYPERTRADE_API_WALLET_PRIV",
+                "HYPERTRADE_SUBACCOUNT_ADDR",
+            ])
             + ". Export them in your shell or set them in .env."
         )
         raise RuntimeError(msg) from e
+
+    setup_logging(settings.log_level)
+    app.state.settings = settings
 
     # Finalize logging with configured level and add middleware
     

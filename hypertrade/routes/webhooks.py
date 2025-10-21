@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Body, HTTPException, Request
+from fastapi.responses import JSONResponse
 from jsonschema import validate as jsonschema_validate, ValidationError as JSONSchemaValidationError
 
 from ..schemas.tradingview_schema import TRADINGVIEW_SCHEMA
@@ -71,7 +72,7 @@ async def tradingview_webhook(request: Request, raw: dict = Body(...)) -> dict:
     side = signal_to_side(signal)
 
     if side is None or signal == SignalType.NO_ACTION:
-        logger.info(f"No actionable signal. signal={signal.value} payload_id={payload.order.id}")
+        log.info("No actionable signal. signal=%s payload_id=%s", signal.value, payload.order.id)
         _mark_processed(payload.order.id)
         return JSONResponse({"status": "no_action", "signal": signal.value, "order_id": payload.order.id})
 
@@ -79,7 +80,7 @@ async def tradingview_webhook(request: Request, raw: dict = Body(...)) -> dict:
     #try:
         # result = client.place_order(symbol=symbol, side=side, qty=contracts, price=price, subaccount=subaccount)
     #except Exception as e:
-    #    logger.exception("Order placement failed")
+    #    log.exception("Order placement failed")
     #    raise HTTPException(status_code=502, detail=f"Order placement failed: {e}")
 
     
@@ -98,6 +99,12 @@ async def tradingview_webhook(request: Request, raw: dict = Body(...)) -> dict:
     # TODO
     
     return response
+
+# Select a subaccount for the symbol; default to configured subaccount
+def _choose_subaccount(symbol: str) -> str:
+    from ..config import get_settings
+    settings = get_settings()
+    return settings.subaccount_addr
 
 # Check the webhook secret if configured in environment
 def secret_enforcement(request, raw):
@@ -170,3 +177,7 @@ def parse_signal(payload: TradingViewWebhook) -> SignalType:
         return SignalType.REVERSE_TO_SHORT
 
     return SignalType.NO_ACTION
+
+def _mark_processed(order_id: str) -> None:
+    # Placeholder for idempotency or audit logging
+    log.debug("Marked processed order_id=%s", order_id)

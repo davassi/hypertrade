@@ -4,6 +4,8 @@ import logging
 from enum import Enum
 from typing import Optional
 
+from .tradingview_enums import Side
+
 logger = logging.getLogger("uvicorn.error")
 
 # Mock Hyperliquid SDK client
