@@ -1,5 +1,7 @@
 <img width="920" height="210" alt="image" src="https://github.com/user-attachments/assets/6823f906-3fc3-4999-a250-57acd154b7a7" />
 
+======================
+
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg?logo=python)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Pydantic v2](https://img.shields.io/badge/Pydantic-v2-green)](https://docs.pydantic.dev/latest/)
@@ -13,6 +15,8 @@
 **HyperTrade** is a lightweight server that processes **TradingView** long/short alerts to execute orders on **Hyperliquid**, for automated algorithmic trading.
 
 It validates webhook payloads, enforces secret auth and IP whitelisting, and emits audit logs. Use it as a reliable layer between **TradingView strategies** and your **Hyperliquid sub-accounts**.
+
+[![Telegram Badge](https://telegram-badge.vercel.app/api/telegram-badge?channelId=@your_channel_or_group)](https://t.me/+VvE0QlK83l00Njc0)
 
 ## Features
 - TradingView‑compatible payloads with validation.
