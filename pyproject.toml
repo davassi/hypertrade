@@ -12,7 +12,8 @@ dependencies = [
   "pydantic-settings>=2.2.1",
   "python-dotenv>=1.0.0",
   "hyperliquid",
-  "jsonschema>=4.19.0"
+  "jsonschema>=4.19.0",
+  "pyTelegramBotAPI>=4.16.1"
 ]
 
 [project.optional-dependencies]

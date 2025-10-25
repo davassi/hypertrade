@@ -4,6 +4,7 @@ import copy
 from fastapi.testclient import TestClient
 import sys
 import pathlib
+import json
 
 
 BASE_PAYLOAD = {
@@ -120,3 +121,80 @@ def test_webhook_ip_whitelist_blocks_forwarded(monkeypatch):
     assert resp.status_code == 403
     body = resp.json()
     assert body["error"]["status"] == 403
+
+
+def test_telegram_notification_background_task(monkeypatch):
+    # Enable Telegram settings
+    monkeypatch.setenv("HYPERTRADE_TELEGRAM_BOT_TOKEN", "TEST_TOKEN")
+    monkeypatch.setenv("HYPERTRADE_TELEGRAM_CHAT_ID", "123456")
+
+    # Provide a fake telebot module so no network is used
+    import types
+    calls = {"n": 0, "last": {}}
+
+    class FakeBot:
+        def __init__(self, token):
+            calls["last"]["token"] = token
+        def send_message(self, chat_id, text):
+            calls["n"] += 1
+            calls["last"].update({"chat_id": chat_id, "text": text})
+
+    fake_telebot = types.SimpleNamespace(TeleBot=FakeBot)
+    monkeypatch.setitem(sys.modules, "telebot", fake_telebot)
+
+    app = make_app(monkeypatch, secret=None)
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    # BackgroundTasks should have executed and called our fake
+    assert calls["n"] == 1
+    assert calls["last"]["token"] == "TEST_TOKEN"
+    assert calls["last"]["chat_id"] == "123456"
+    assert "SOLUSD" in calls["last"]["text"]
+
+
+def test_telegram_disabled_when_no_config(monkeypatch):
+    # Ensure no telegram env is set
+    for k in ("HYPERTRADE_TELEGRAM_BOT_TOKEN", "HYPERTRADE_TELEGRAM_CHAT_ID"):
+        monkeypatch.delenv(k, raising=False)
+
+    # Spy on send_telegram_message to ensure not called
+    import hypertrade.notify as notify
+    called = {"n": 0}
+    def fake_send(*args, **kwargs):
+        called["n"] += 1
+        return True
+    monkeypatch.setattr(notify, "send_telegram_message", fake_send)
+
+    app = make_app(monkeypatch, secret=None)
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    assert called["n"] == 0
+
+
+def test_telegram_disabled_flag(monkeypatch):
+    # Set env vars but disable via flag
+    monkeypatch.setenv("HYPERTRADE_TELEGRAM_BOT_TOKEN", "TEST_TOKEN")
+    monkeypatch.setenv("HYPERTRADE_TELEGRAM_CHAT_ID", "123456")
+    monkeypatch.setenv("HYPERTRADE_TELEGRAM_ENABLED", "false")
+
+    # Spy to ensure not called when disabled
+    import hypertrade.notify as notify
+    called = {"n": 0}
+    def fake_send(*args, **kwargs):
+        called["n"] += 1
+        return True
+    monkeypatch.setattr(notify, "send_telegram_message", fake_send)
+
+    app = make_app(monkeypatch, secret=None)
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    assert called["n"] == 0

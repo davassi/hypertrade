@@ -8,6 +8,7 @@ from .middleware.logging import LoggingMiddleware
 from .middleware.content_limit import ContentLengthLimitMiddleware
 from .routes.health import router as health_router
 from .routes.webhooks import router as webhooks_router
+from .notify import send_telegram_message
 from .exception_handlers import register_exception_handlers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -15,7 +16,7 @@ log = logging.getLogger("uvicorn.error")
 
 # Change the port number and start the daemon with: 
 # 
-# $ uvicorn hypertrade.daemon:app --host 0.0.0.0 --port 9414
+# $ uvicorn hypertrade.daemon:app --host 0.0.0.0 --port 6487
 #
 def create_daemon() -> FastAPI:
 
@@ -31,6 +32,23 @@ def create_daemon() -> FastAPI:
 
     setup_logging(settings.log_level)
     app.state.settings = settings
+
+    # Pre-bind optional Telegram notifier to avoid per-request env access
+    if (
+        getattr(settings, "telegram_enabled", True)
+        and getattr(settings, "telegram_bot_token", None)
+        and getattr(settings, "telegram_chat_id", None)
+    ):
+        token = settings.telegram_bot_token
+        chat_id = settings.telegram_chat_id
+
+        def _telegram_notify(text: str, _token=token, _chat_id=chat_id):
+            return send_telegram_message(_token, _chat_id, text)
+
+        app.state.telegram_notify = _telegram_notify
+        log.info("Telegram notifications enabled")
+    else:
+        app.state.telegram_notify = None
 
     # Finalize logging with configured level and add middleware
     

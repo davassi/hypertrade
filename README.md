@@ -1,5 +1,15 @@
 <img width="920" height="210" alt="image" src="https://github.com/user-attachments/assets/6823f906-3fc3-4999-a250-57acd154b7a7" />
 
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg?logo=python)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
+[![Pydantic v2](https://img.shields.io/badge/Pydantic-v2-green)](https://docs.pydantic.dev/latest/)
+[![Uvicorn](https://img.shields.io/badge/Uvicorn-0.30%2B-informational)](https://www.uvicorn.org/)
+[![Ruff](https://img.shields.io/badge/Lint-Ruff-46a758)](https://docs.astral.sh/ruff/)
+[![Tests: pytest](https://img.shields.io/badge/tests-pytest-blue)](https://docs.pytest.org/)
+[![GitHub stars](https://img.shields.io/github/stars/davassi/hypertrade?style=social)](https://github.com/davassi/hypertrade/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/davassi/hypertrade)](https://github.com/davassi/hypertrade/issues)
+[![Last commit](https://img.shields.io/github/last-commit/davassi/hypertrade)](https://github.com/davassi/hypertrade/commits/main)
+
 **HyperTrade** is a lightweight server that processes **TradingView** long/short alerts to execute orders on **Hyperliquid**, for automated algorithmic trading.
 
 It validates webhook payloads, enforces secret auth and IP whitelisting, and emits audit logs. Use it as a reliable layer between **TradingView strategies** and your **Hyperliquid sub-accounts**.
@@ -51,7 +61,7 @@ pip install fastapi uvicorn[standard] pydantic pydantic-settings python-dotenv
 Run via Uvicorn or module entrypoint
 
 ```bash
-uvicorn hypertrade.daemon:app --reload --port 9414
+uvicorn hypertrade.daemon:app --reload --port 6487
 ```
 
 ```bash
@@ -70,7 +80,7 @@ Hypertrade won't start unless these variables are set:
 export HYPERTRADE_MASTER_ADDR=0xYourMasterAddress
 export HYPERTRADE_API_WALLET_PRIV='your-private-key'
 export HYPERTRADE_SUBACCOUNT_ADDR=0xYourSubaccountAddress
-uvicorn hypertrade.daemon:app --port 9414
+uvicorn hypertrade.daemon:app --port 6487
 ```
 
 Or copy `.env.example` to `.env` and fill in the values:
@@ -92,16 +102,16 @@ Enable IP whitelisting for the TradingView webhook endpoint and set allowed IPs:
 
 ```bash
 export HYPERTRADE_IP_WHITELIST_ENABLED=true
-# Either JSON list:
 export 'HYPERTRADE_TV_WEBHOOK_IPS=["52.89.214.238","34.212.75.30","54.218.53.128","52.32.178.7"]'
-# Or comma-separated:
-export HYPERTRADE_TV_WEBHOOK_IPS=52.89.214.238,34.212.75.30,54.218.53.128,52.32.178.7
 
 # If behind a proxy, keep this true so X-Forwarded-For is honored
 export HYPERTRADE_TRUST_FORWARDED_FOR=true
 ```
 
 You can apply the whitelist dependency to other routes using `require_ip_whitelisted()` from `hypertrade/security.py`.
+
+Note:
+- For pydantic-settings v2, complex types like lists must be provided as JSON strings in env vars. Use a JSON list for `HYPERTRADE_TV_WEBHOOK_IPS` (as shown above). Comma-separated values are not supported by the loader.
 
 ### Webhook Secret (optional but strongly suggested, part 2)
 
@@ -117,7 +127,7 @@ export HYPERTRADE_WEBHOOK_SECRET='your-shared-secret'
 
 Payload (TradingView template) with all the placeholders, including secret and leverage. Copy and paste it on as TradingView Alert.
 
-Don't forget to set up first the strategy name, the **"secret": "your-shared-secret"** and the leverage.
+Don't forget to set up first the strategy name, the **"secret": "your-shared-secret"** and the preferred leverage.
 
 ```json
 {
@@ -189,6 +199,21 @@ Behavior:
 - `HYPERTRADE_ENABLE_TRUSTED_HOSTS` (default `false`): enable Trusted Host middleware.
 - `HYPERTRADE_TRUSTED_HOSTS` (default `*`): comma-separated list of allowed hosts when Trusted Host is enabled.
 - Webhook requires `Content-Type: application/json` and returns 415 otherwise.
+
+### Telegram Notifications (optional)
+
+Enable Telegram alerts for processed webhooks. Set the following env vars:
+
+```bash
+# Enable/disable without removing other variables (default: true)
+export HYPERTRADE_TELEGRAM_ENABLED=true
+
+# Telegram bot token and chat id
+export HYPERTRADE_TELEGRAM_BOT_TOKEN=123456:ABCDEF-your-bot-token
+export HYPERTRADE_TELEGRAM_CHAT_ID=987654321
+```
+
+When enabled, each accepted webhook enqueues a background task that sends a concise message with exchange, ticker, action, contracts, price, and the parsed signal. If either token or chat id is missing or `HYPERTRADE_TELEGRAM_ENABLED=false`, no message is sent.
 
 ## Sequence diagram
 

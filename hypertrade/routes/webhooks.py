@@ -5,12 +5,14 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Body, HTTPException, Request
+from fastapi import BackgroundTasks
 from fastapi.responses import JSONResponse
 from jsonschema import validate as jsonschema_validate, ValidationError as JSONSchemaValidationError
 
 from ..schemas.tradingview_schema import TRADINGVIEW_SCHEMA
 from ..schemas.tradingview import TradingViewWebhook
 from ..security import require_ip_whitelisted
+from ..notify import send_telegram_message
 
 from ..routes.tradingview_enums import SignalType, PositionType, OrderAction, Side
 
@@ -19,7 +21,7 @@ router = APIRouter(tags=["webhooks"])
 log = logging.getLogger("uvicorn.error")
 
 @router.post("/webhook", dependencies=[Depends(require_ip_whitelisted(None))], summary="TradingView webhook")
-async def tradingview_webhook(request: Request, raw: dict = Body(...)) -> dict:
+async def tradingview_webhook(request: Request, background_tasks: BackgroundTasks, raw: dict = Body(...)) -> dict:
     
     # Let's start with our checks.
     
@@ -68,6 +70,7 @@ async def tradingview_webhook(request: Request, raw: dict = Body(...)) -> dict:
         contracts = float(payload.order.contracts)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid 'contracts' value")
+    
     price = float(payload.order.price) if payload.order.price else None
 
     side = signal_to_side(signal)
@@ -98,8 +101,13 @@ async def tradingview_webhook(request: Request, raw: dict = Body(...)) -> dict:
         "received_at": datetime.now(timezone.utc).isoformat(),
     }
     
-    # Optional: shoot the response on telegram 
-    # TODO
+    # Optional: shoot the response to Telegram if configured (pre-bound at startup)
+    notifier = getattr(request.app.state, "telegram_notify", None)
+    if notifier:
+        text = (
+            f"[{symbol}] {signal.value} {side.value} price={payload.order.price}\n"
+        )
+        background_tasks.add_task(notifier, text)
     
     return response
 

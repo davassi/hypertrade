@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     enable_trusted_hosts: bool = False
     trusted_hosts: List[str] = ["*"]
 
+    # Optional Telegram notifications
+    telegram_enabled: bool = True
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+
     # Settings config
     model_config = SettingsConfigDict(
         env_file=".env",
