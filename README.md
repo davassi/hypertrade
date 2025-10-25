@@ -8,6 +8,7 @@
 [![Uvicorn](https://img.shields.io/badge/Uvicorn-0.30%2B-informational)](https://www.uvicorn.org/)
 [![Ruff](https://img.shields.io/badge/Lint-Ruff-46a758)](https://docs.astral.sh/ruff/)
 [![Tests: pytest](https://img.shields.io/badge/tests-pytest-blue)](https://docs.pytest.org/)
+[![Telegram](https://img.shields.io/badge/Telegram-join-2CA5E0?logo=telegram&logoColor=white)](https://t.me/+VvE0QlK83l00Njc0)
 [![GitHub stars](https://img.shields.io/github/stars/davassi/hypertrade?style=social)](https://github.com/davassi/hypertrade/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/davassi/hypertrade)](https://github.com/davassi/hypertrade/issues)
 [![Last commit](https://img.shields.io/github/last-commit/davassi/hypertrade)](https://github.com/davassi/hypertrade/commits/main)
@@ -15,8 +16,6 @@
 **HyperTrade** is a lightweight server that processes **TradingView** long/short alerts to execute orders on **Hyperliquid**, for automated algorithmic trading.
 
 It validates webhook payloads, enforces secret auth and IP whitelisting, and emits audit logs. Use it as a reliable layer between **TradingView strategies** and your **Hyperliquid sub-accounts**.
-
-![Telegram Badge](https://telegram-badge.vercel.app/api/telegram-badge?channelId=@your_channel_or_group)(https://t.me/+VvE0QlK83l00Njc0)
 
 ## Features
 - TradingView‑compatible payloads with validation.
