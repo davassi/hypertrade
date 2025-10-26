@@ -101,7 +101,7 @@ async def tradingview_webhook(request: Request, background_tasks: BackgroundTask
         "received_at": datetime.now(timezone.utc).isoformat(),
     }
     
-    # Optional: shoot the response to Telegram if configured (pre-bound at startup)
+    # Optional: shoot the response to Telegram if configured 
     notifier = getattr(request.app.state, "telegram_notify", None)
     if notifier:
         text = (

@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Optional webhook secret; if set, incoming payloads must include `general.secret` matching this value
-    webhook_secret: SecretStr | None = None
+    webhook_secret: Optional[SecretStr] = None
 
     # Hardening & limits
     max_payload_bytes: int = 65536
@@ -40,8 +40,8 @@ class Settings(BaseSettings):
 
     # Optional Telegram notifications
     telegram_enabled: bool = True
-    telegram_bot_token: str | None = None
-    telegram_chat_id: str | None = None
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
 
     # Settings config
     model_config = SettingsConfigDict(

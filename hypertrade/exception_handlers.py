@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -8,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = logging.getLogger("uvicorn.error")
 
-def _extract_request_id(response_headers: dict[str, str] | None) -> str | None:
+def _extract_request_id(response_headers: Optional[dict[str, str]]) -> Optional[str]:
     if not response_headers:
         return None
     return response_headers.get("X-Request-ID")
@@ -57,4 +57,3 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
-

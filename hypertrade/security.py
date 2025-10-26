@@ -1,11 +1,11 @@
-from typing import Iterable
+from typing import Iterable, Optional
 
 from fastapi import Depends, HTTPException, Request
 
 from .config import get_settings
 
 # Extract client IP from request, considering X-Forwarded-For if trusted
-def _extract_client_ip(request: Request, trust_forwarded_for: bool) -> str | None:
+def _extract_client_ip(request: Request, trust_forwarded_for: bool) -> Optional[str]:
     if trust_forwarded_for:
         xff = request.headers.get("x-forwarded-for")
         if xff:
@@ -18,7 +18,7 @@ def _extract_client_ip(request: Request, trust_forwarded_for: bool) -> str | Non
     return None
 
 # Dependency to enforce IP whitelist on routes
-def require_ip_whitelisted(allowed_ips: Iterable[str] | None = None):
+def require_ip_whitelisted(allowed_ips: Optional[Iterable[str]] = None):
     async def dependency(request: Request, settings=Depends(get_settings)):
         if not settings.ip_whitelist_enabled:
             return  # whitelist disabled; allow
@@ -29,4 +29,3 @@ def require_ip_whitelisted(allowed_ips: Iterable[str] | None = None):
             raise HTTPException(status_code=403, detail="Forbidden: IP not allowed")
 
     return dependency
-
