@@ -57,7 +57,7 @@ Using pip:
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
-pip install fastapi uvicorn[standard] pydantic pydantic-settings python-dotenv
+pip install fastapi uvicorn[standard] pydantic pydantic-settings python-dotenv jsonschema pyTelegramBotAPI
 ```
 
 ## Run
@@ -65,7 +65,7 @@ pip install fastapi uvicorn[standard] pydantic pydantic-settings python-dotenv
 Run via Uvicorn or module entrypoint
 
 ```bash
-uvicorn hypertrade.daemon:app --reload --port 6487
+uvicorn hypertrade.daemon:app --host 0.0.0.0 --port 6487
 ```
 
 ```bash
@@ -98,7 +98,6 @@ cp .env.example .env
 
 - `GET /health` – health check
 - `POST /webhook` – TradingView webhook (supports IP whitelist)
-
 
 ### IP Whitelisting (optional but strongly suggested)
 
@@ -206,7 +205,8 @@ export HYPERTRADE_TELEGRAM_BOT_TOKEN=123456:ABCDEF-your-bot-token
 export HYPERTRADE_TELEGRAM_CHAT_ID=987654321
 ```
 
-When enabled, each accepted webhook enqueues a background task that sends a concise message with exchange, ticker, action, contracts, price, and the parsed signal. If either token or chat id is missing or `HYPERTRADE_TELEGRAM_ENABLED=false`, no message is sent.
+When enabled, each accepted webhook enqueues a background task that sends a message with the parsed signal, ticker, action, contracts and price. 
+If either token or chat id is missing or `HYPERTRADE_TELEGRAM_ENABLED=false`, no message is sent.
 
 ## Sequence diagram
 
