@@ -1,6 +1,6 @@
 <img width="920" height="210" alt="image" src="https://github.com/user-attachments/assets/6823f906-3fc3-4999-a250-57acd154b7a7" />
 
-___
+---
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg?logo=python)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
@@ -185,17 +185,6 @@ Validation:
 Behavior:
 - If `HYPERTRADE_WEBHOOK_SECRET` is set, incoming requests must include `general.secret` matching it, or the request is rejected with 401.
 - If not set, the secret check is skipped.
-
-### Logging
-
-- Control log level via env var:
-
-  ```bash
-  export HYPERTRADE_LOG_LEVEL=INFO   # or DEBUG, WARNING, ERROR
-  ```
-
-- Requests are logged with method, route, status, duration, client IP, and request ID.
-- Response headers include `X-Request-ID` and `X-Process-Time` for tracing.
 
 ### Additional Security & Limits
 
