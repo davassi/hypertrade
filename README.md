@@ -143,7 +143,7 @@ Don't forget to set up first the strategy name, the **"secret": "your-shared-sec
     "time": "{{time}}",
     "timenow": "{{timenow}}",
     "secret": "your-shared-secret",
-    "leverage": "5X"
+    "leverage": "3X"
   },
   "symbol_data": {
     "open": "{{open}}",

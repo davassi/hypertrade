@@ -9,7 +9,7 @@ import json
 
 BASE_PAYLOAD = {
     "general": {
-        "strategy": "Solana Enhanced Strategy (114, 21, 1, 2, 0)",
+        "strategy": "Solana Super Cool Enhanced Strategy (114, 21, 1, 2, 0)",
         "ticker": "SOLUSD",
         "exchange": "COINBASE",
         "interval": "60",
@@ -74,10 +74,14 @@ def test_webhook_happy_path_ok(monkeypatch):
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["status"] == "ok"
+    assert data["signal"] == "CLOSE_SHORT"
+    assert data["side"] == "buy"
+    assert data["symbol"] == "SOLUSD"
     assert data["ticker"] == "SOLUSD"
     assert data["exchange"] == "COINBASE"
     assert data["action"] == "buy"
-
+    assert data["contracts"] == "46231.75300000"
+    assert data["price"] == "183.81"
 
 def test_webhook_rejects_bad_secret(monkeypatch):
     app = make_app(monkeypatch, secret="expected-secret")
@@ -85,7 +89,7 @@ def test_webhook_rejects_bad_secret(monkeypatch):
 
     payload = copy.deepcopy(BASE_PAYLOAD)
     # Payload carries a different secret than env
-    payload["general"]["secret"] = "wrong-secret"
+    payload["general"]["secret"] = "ops-wrong-secret"
     resp = client.post("/webhook", json=payload)
     assert resp.status_code == 401
     body = resp.json()
