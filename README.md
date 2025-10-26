@@ -84,14 +84,18 @@ Hypertrade won't start unless these variables are set:
 export HYPERTRADE_MASTER_ADDR=0xYourMasterAddress
 export HYPERTRADE_API_WALLET_PRIV='your-private-key'
 export HYPERTRADE_SUBACCOUNT_ADDR=0xYourSubaccountAddress
-uvicorn hypertrade.daemon:app --port 6487
+uvicorn hypertrade.daemon:app --host 0.0.0.0 --port 6487
 ```
 
-Or copy `.env.example` to `.env` and fill in the values:
+Personally I prefer storing secrets with Password Store (pass) instead of a `.env` file:
+
+- Project: https://www.passwordstore.org/
+- Example exports pulling from pass:
 
 ```bash
-cp .env.example .env
-# edit .env and set real values
+export HYPERTRADE_MASTER_ADDR="$(pass show hypertrade/master_addr)"
+export HYPERTRADE_API_WALLET_PRIV="$(pass show hypertrade/api_wallet_priv)"
+export HYPERTRADE_SUBACCOUNT_ADDR="$(pass show hypertrade/subaccount_addr)"
 ```
 
 ## Endpoints
