@@ -4,6 +4,7 @@ from typing import Any, Optional
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = logging.getLogger("uvicorn.error")
@@ -14,43 +15,77 @@ def _extract_request_id(response_headers: Optional[dict[str, str]]) -> Optional[
     return response_headers.get("X-Request-ID")
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    log.warning("HTTPException %s %s -> %s", request.method, request.url.path, exc.status_code)
+    req_id = getattr(request.state, "request_id", None)
+    log.warning(
+        "HTTPException %s %s -> %s req_id=%s",
+        request.method,
+        request.url.path,
+        exc.status_code,
+        req_id,
+    )
+    content = {
+        "error": {
+            "status": exc.status_code,
+            "detail": exc.detail,
+            "path": request.url.path,
+            "request_id": req_id,
+        }
+    }
+    # Use jsonable_encoder to avoid bytes/non-serializable types breaking dumps
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "error": {
-                "status": exc.status_code,
-                "detail": exc.detail,
-                "path": request.url.path,
-            }
-        },
+        content=jsonable_encoder(content),
+        headers={"X-Request-ID": req_id} if req_id else None,
     )
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    log.warning("ValidationError on %s %s: %s", request.method, request.url.path, exc.errors())
+    req_id = getattr(request.state, "request_id", None)
+    # Do not log stack traces for validation errors; keep concise
+    log.warning(
+        "ValidationError %s %s -> 422 req_id=%s errors=%s",
+        request.method,
+        request.url.path,
+        req_id,
+        exc.errors(),
+    )
+    content = {
+        "error": {
+            "status": 422,
+            "detail": "Request validation failed",
+            "errors": exc.errors(),
+            "path": request.url.path,
+            "request_id": req_id,
+        }
+    }
+    # Some validation contexts include bytes (e.g., raw body); encode safely
     return JSONResponse(
         status_code=422,
-        content={
-            "error": {
-                "status": 422,
-                "detail": "Request validation failed",
-                "errors": exc.errors(),
-                "path": request.url.path,
-            }
-        },
+        content=jsonable_encoder(content),
+        headers={"X-Request-ID": req_id} if req_id else None,
     )
 
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    log.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    req_id = getattr(request.state, "request_id", None)
+    # Avoid stacktraces; summarize error type and request id
+    log.error(
+        "UnhandledError %s %s -> 500 err=%s req_id=%s",
+        request.method,
+        request.url.path,
+        exc.__class__.__name__,
+        req_id,
+    )
+    content = {
+        "error": {
+            "status": 500,
+            "detail": "Internal server error",
+            "path": request.url.path,
+            "request_id": req_id,
+        }
+    }
     return JSONResponse(
         status_code=500,
-        content={
-            "error": {
-                "status": 500,
-                "detail": "Internal server error",
-                "path": request.url.path,
-            }
-        },
+        content=jsonable_encoder(content),
+        headers={"X-Request-ID": req_id} if req_id else None,
     )
 
 def register_exception_handlers(app: FastAPI) -> None:

@@ -24,6 +24,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         method = request.method
         path = request.url.path
 
+        # Attach request id to request.state for downstream handlers
+        try:
+            request.state.request_id = req_id
+        except Exception:
+            pass
+
         response = None
         try:
             response = await call_next(request)
@@ -33,12 +39,13 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             status = response.status_code if response else 500
             route = getattr(request.scope.get("route"), "path", path)
             self.logger.info(
-                "%s %s -> %s %dms ip=%s",
+                "%s %s -> %s %dms ip=%s req_id=%s",
                 method,
                 route,
                 status,
                 duration_ms,
-                client_ip
+                client_ip,
+                req_id,
             )
             if response is not None:
                 response.headers["X-Request-ID"] = req_id

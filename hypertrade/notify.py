@@ -15,6 +15,7 @@ def send_telegram_message(token: str, chat_id: str, text: str) -> bool:
         # Lazy import to allow tests to stub or projects to run without it until used
         import telebot  # type: ignore
     except Exception:
+        # No stacktrace; keep logs clean in production
         log.warning("Telegram library not installed; skipping send")
         return False
 
@@ -23,5 +24,6 @@ def send_telegram_message(token: str, chat_id: str, text: str) -> bool:
         bot.send_message(chat_id, text)
         return True
     except Exception:
-        log.warning("Telegram send failed", exc_info=True)
+        # Log concise message without stacktrace
+        log.warning("Telegram send failed")
         return False
