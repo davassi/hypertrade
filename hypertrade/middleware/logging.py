@@ -15,6 +15,17 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.logger = logging.getLogger("uvicorn.error")
 
+    def _log_request(self, *, method: str, route: str, status: int, duration_ms: int, client_ip: str, req_id: str) -> None:
+        self.logger.info(
+            "%s %s -> %s %dms ip=%s req_id=%s",
+            method,
+            route,
+            status,
+            duration_ms,
+            client_ip,
+            req_id,
+        )
+
     async def dispatch(self, request: Request, call_next):
         start = time.perf_counter()
         req_id = str(uuid.uuid4())
@@ -38,14 +49,13 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             duration_ms = int((time.perf_counter() - start) * 1000)
             status = response.status_code if response else 500
             route = getattr(request.scope.get("route"), "path", path)
-            self.logger.info(
-                "%s %s -> %s %dms ip=%s req_id=%s",
-                method,
-                route,
-                status,
-                duration_ms,
-                client_ip,
-                req_id,
+            self._log_request(
+                method=method,
+                route=route,
+                status=status,
+                duration_ms=duration_ms,
+                client_ip=client_ip,
+                req_id=req_id,
             )
             if response is not None:
                 response.headers["X-Request-ID"] = req_id

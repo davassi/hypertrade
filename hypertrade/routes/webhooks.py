@@ -20,29 +20,79 @@ router = APIRouter(tags=["webhooks"])
 
 log = logging.getLogger("uvicorn.error")
 
-@router.post("/webhook", dependencies=[Depends(require_ip_whitelisted(None))], summary="TradingView webhook")
-async def tradingview_webhook(request: Request, background_tasks: BackgroundTasks) -> dict:
-    
-    # Let's start with our checks.
-    
-    # First: Require JSON content type
+async def _log_invalid_json_body(request: Request) -> None:
+    """Log the full request body when JSON parsing fails, with req_id."""
+    try:
+        body_bytes = await request.body()
+        body_text = body_bytes.decode("utf-8", errors="replace")
+    except Exception:
+        body_text = "<unreadable>"
+    req_id = getattr(request.state, "request_id", None)
+    log.warning("Invalid JSON body req_id=%s body=%s", req_id, body_text)
+
+def _require_json_content_type(request: Request) -> None:
+    """Ensure the request has application/json content type or raise 415."""
     ctype = request.headers.get("content-type", "").lower()
     if "application/json" not in ctype:
         raise HTTPException(status_code=415, detail="Unsupported Media Type: application/json required")
-    
-    # Second: Parse JSON body ourselves to avoid pre-validation errors on non-JSON content
+
+async def _read_json_body(request: Request) -> dict:
+    """Read and parse JSON body; log full body on failure and raise 422."""
     try:
-        raw = await request.json()
+        return await request.json()
     except Exception:
+        await _log_invalid_json_body(request)
         raise HTTPException(status_code=422, detail="Invalid JSON body")
 
-    # Third: JSON Schema validation on raw payload
+def _validate_schema(raw: dict) -> None:
+    """Validate payload against TradingView JSON schema; raise 422 with detail on error."""
     try:
         jsonschema_validate(instance=raw, schema=TRADINGVIEW_SCHEMA)
     except JSONSchemaValidationError as e:
         path = ".".join([str(p) for p in e.path])
         detail = f"JSON schema validation error at '{path or '$'}': {e.message}"
         raise HTTPException(status_code=422, detail=detail)
+
+def _build_response(payload: TradingViewWebhook, *, signal: SignalType, side: Side, symbol: str) -> dict:
+    from datetime import datetime, timezone
+    return {
+        "status": "ok",
+        "signal": signal.value,
+        "side": side.value,
+        "symbol": symbol,
+        "ticker": payload.general.ticker,
+        "exchange": payload.general.exchange,
+        "action": payload.order.action,
+        "contracts": str(payload.order.contracts),
+        "price": str(payload.order.price),
+        "received_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+def _format_telegram_message(*, symbol: str, signal: SignalType, side: Side, price: float | None) -> str:
+    p = f"{price}" if price is not None else "market"
+    return f"[{symbol}] {signal.value} {side.value} price={p}"
+
+def _parse_contracts_and_price(payload: TradingViewWebhook) -> tuple[float, float | None]:
+    try:
+        contracts = float(payload.order.contracts)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid 'contracts' value")
+    price = float(payload.order.price) if payload.order.price else None
+    return contracts, price
+
+@router.post("/webhook", dependencies=[Depends(require_ip_whitelisted(None))], summary="TradingView webhook")
+async def tradingview_webhook(request: Request, background_tasks: BackgroundTasks) -> dict:
+    
+    # Let's start with our checks.
+    
+    # First: Require JSON content type
+    _require_json_content_type(request)
+    
+    # Second: Parse JSON body ourselves to avoid pre-validation errors on non-JSON content
+    raw = await _read_json_body(request)
+
+    # Third: JSON Schema validation on raw payload
+    _validate_schema(raw)
 
     # Fourth (Optional but recommended) secret enforcement: if env secret is set, 
     # then the payload requires to carry a matching general.secret
@@ -72,12 +122,7 @@ async def tradingview_webhook(request: Request, background_tasks: BackgroundTask
     symbol = payload.general.ticker.upper()
     log.info("TradingView ticker mapped to symbol: %s", symbol)
     
-    try:
-        contracts = float(payload.order.contracts)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid 'contracts' value")
-    
-    price = float(payload.order.price) if payload.order.price else None
+    contracts, price = _parse_contracts_and_price(payload)
 
     side = signal_to_side(signal)
 
@@ -94,25 +139,12 @@ async def tradingview_webhook(request: Request, background_tasks: BackgroundTask
 
     
     # Finally: build a response
-    response = {
-        "status": "ok",
-        "signal": signal.value,
-        "side": side.value,
-        "symbol": symbol,
-        "ticker": payload.general.ticker,
-        "exchange": payload.general.exchange,
-        "action": payload.order.action,
-        "contracts": str(payload.order.contracts),
-        "price": str(payload.order.price),
-        "received_at": datetime.now(timezone.utc).isoformat(),
-    }
+    response = _build_response(payload, signal=signal, side=side, symbol=symbol)
     
     # Optional: shoot the response to Telegram if configured 
     notifier = getattr(request.app.state, "telegram_notify", None)
     if notifier:
-        text = (
-            f"[{symbol}] {signal.value} {side.value} price={payload.order.price}\n"
-        )
+        text = _format_telegram_message(symbol=symbol, signal=signal, side=side, price=price)
         background_tasks.add_task(notifier, text)
     
     return response
