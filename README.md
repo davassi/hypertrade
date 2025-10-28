@@ -153,7 +153,7 @@ Don't forget to set up first the strategy name, the **"secret": "your-shared-sec
     "close": "{{close}}",
     "high": "{{high}}",
     "low": "{{low}}",
-    "volume": "{{volume}}",
+    "volume": "{{volume}}"
   },
   "currency": {
     "quote": "{{syminfo.currency}}",
