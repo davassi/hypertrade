@@ -4,7 +4,7 @@ import hmac
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Body, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi import BackgroundTasks
 from fastapi.responses import JSONResponse
 from jsonschema import validate as jsonschema_validate, ValidationError as JSONSchemaValidationError
@@ -21,7 +21,7 @@ router = APIRouter(tags=["webhooks"])
 log = logging.getLogger("uvicorn.error")
 
 @router.post("/webhook", dependencies=[Depends(require_ip_whitelisted(None))], summary="TradingView webhook")
-async def tradingview_webhook(request: Request, background_tasks: BackgroundTasks, raw: dict = Body(...)) -> dict:
+async def tradingview_webhook(request: Request, background_tasks: BackgroundTasks) -> dict:
     
     # Let's start with our checks.
     
@@ -30,7 +30,13 @@ async def tradingview_webhook(request: Request, background_tasks: BackgroundTask
     if "application/json" not in ctype:
         raise HTTPException(status_code=415, detail="Unsupported Media Type: application/json required")
     
-    # Second: JSON Schema validation on raw payload
+    # Second: Parse JSON body ourselves to avoid pre-validation errors on non-JSON content
+    try:
+        raw = await request.json()
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid JSON body")
+
+    # Third: JSON Schema validation on raw payload
     try:
         jsonschema_validate(instance=raw, schema=TRADINGVIEW_SCHEMA)
     except JSONSchemaValidationError as e:
@@ -38,7 +44,7 @@ async def tradingview_webhook(request: Request, background_tasks: BackgroundTask
         detail = f"JSON schema validation error at '{path or '$'}': {e.message}"
         raise HTTPException(status_code=422, detail=detail)
 
-    # Third (Optional but recommended) secret enforcement: if env secret is set, 
+    # Fourth (Optional but recommended) secret enforcement: if env secret is set, 
     # then the payload requires to carry a matching general.secret
     secret_enforcement(request, raw)
 
@@ -60,7 +66,7 @@ async def tradingview_webhook(request: Request, background_tasks: BackgroundTask
     )
     log.debug("Full webhook payload: %s", raw)
     
-    # Fourth: processing logic here (TOOD: would be good to enqueue the job)
+    # Fifth: processing logic here (TODO: would be good to enqueue the job)
     signal = parse_signal(payload)
     log.info("Parsed signal: %s", signal.value)
     symbol = payload.general.ticker.upper()

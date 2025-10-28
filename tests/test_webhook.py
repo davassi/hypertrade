@@ -83,6 +83,29 @@ def test_webhook_happy_path_ok(monkeypatch):
     assert data["contracts"] == "46231.75300000"
     assert data["price"] == "183.81"
 
+def test_webhook_rejects_non_json_content_type(monkeypatch):
+    app = make_app(monkeypatch, secret=None)
+    client = TestClient(app)
+
+    body = json.dumps(BASE_PAYLOAD)
+    # Send as text/plain to simulate TradingView misconfigured content-type
+    resp = client.post("/webhook", data=body, headers={"Content-Type": "text/plain"})
+    assert resp.status_code == 415
+    data = resp.json()
+    assert data["error"]["status"] == 415
+    assert "application/json" in data["error"]["detail"]
+
+def test_webhook_invalid_json_returns_422(monkeypatch):
+    app = make_app(monkeypatch, secret=None)
+    client = TestClient(app)
+
+    # Malformed JSON (trailing comma)
+    bad = b'{"a":1,}'
+    resp = client.post("/webhook", data=bad, headers={"Content-Type": "application/json"})
+    assert resp.status_code == 422
+    data = resp.json()
+    assert data["error"]["status"] == 422
+
 def test_webhook_rejects_bad_secret(monkeypatch):
     app = make_app(monkeypatch, secret="expected-secret")
     client = TestClient(app)
