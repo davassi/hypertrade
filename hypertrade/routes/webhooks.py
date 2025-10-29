@@ -2,7 +2,7 @@ import logging
 import hmac
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi import BackgroundTasks
@@ -75,8 +75,8 @@ def _format_telegram_message(
     signal: SignalType,
     side: Side,
     contracts: float,
-    price: float | None,
-    req_id: str | None,
+    price: Optional[float],
+    req_id: Optional[str],
 ) -> str:
     # Prefer original precision from payload where possible
     contracts_text = str(payload.order.contracts)
@@ -109,7 +109,7 @@ def _format_telegram_message(
         lines.append(f"ReqID: {req_id}")
     return "\n".join(lines)
 
-def _parse_contracts_and_price(payload: TradingViewWebhook) -> tuple[float, float | None]:
+def _parse_contracts_and_price(payload: TradingViewWebhook) -> Tuple[float, Optional[float]]:
     try:
         contracts = float(payload.order.contracts)
     except Exception:
