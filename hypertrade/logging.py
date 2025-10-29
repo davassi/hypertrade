@@ -1,12 +1,12 @@
 import logging
 import logging.config
-from typing import Iterable, Optional
+from typing import Iterable, Optional, List
 from fastapi.routing import APIRoute
 
 from .version import __version__
 
 class _MessageFilter(logging.Filter):
-    def __init__(self, *, deny_contains: list[str] | None = None):
+    def __init__(self, *, deny_contains: Optional[List[str]] = None):
         super().__init__()
         self.deny_contains = deny_contains or []
 
