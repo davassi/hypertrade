@@ -68,9 +68,46 @@ def _build_response(payload: TradingViewWebhook, *, signal: SignalType, side: Si
         "received_at": datetime.now(timezone.utc).isoformat(),
     }
 
-def _format_telegram_message(*, symbol: str, signal: SignalType, side: Side, price: float | None) -> str:
-    p = f"{price}" if price is not None else "market"
-    return f"[{symbol}] {signal.value} {side.value} price={p}"
+def _format_telegram_message(
+    *,
+    payload: TradingViewWebhook,
+    symbol: str,
+    signal: SignalType,
+    side: Side,
+    contracts: float,
+    price: float | None,
+    req_id: str | None,
+) -> str:
+    # Prefer original precision from payload where possible
+    contracts_text = str(payload.order.contracts)
+    price_text = str(payload.order.price) if payload.order.price is not None else "market"
+    leverage = payload.general.leverage or "-"
+    strategy = payload.general.strategy or "-"
+    exchange = payload.general.exchange
+    interval = payload.general.interval
+    prev_pos = payload.market.previous_position
+    prev_sz = str(payload.market.previous_position_size)
+    cur_pos = payload.market.position
+    cur_sz = str(payload.market.position_size)
+    order_id = payload.order.id
+    comment = payload.order.comment or "-"
+    t_time = payload.general.time.isoformat()
+    t_now = payload.general.timenow.isoformat()
+
+    lines = [
+        f"HyperTrade Webhook",
+        f"Symbol: {symbol} @ {exchange}",
+        f"Signal: {signal.value} | Side: {side.value} | Leverage: {leverage}",
+        f"Order: action={payload.order.action} id={order_id} contracts={contracts_text} price={price_text}",
+        f"Position: {prev_pos}({prev_sz}) -> {cur_pos}({cur_sz})",
+        f"Strategy: {strategy} | Interval: {interval}",
+        f"Times: time={t_time} now={t_now}",
+    ]
+    if comment and comment != "-":
+        lines.append(f"Comment: {comment}")
+    if req_id:
+        lines.append(f"ReqID: {req_id}")
+    return "\n".join(lines)
 
 def _parse_contracts_and_price(payload: TradingViewWebhook) -> tuple[float, float | None]:
     try:
@@ -144,7 +181,16 @@ async def tradingview_webhook(request: Request, background_tasks: BackgroundTask
     # Optional: shoot the response to Telegram if configured 
     notifier = getattr(request.app.state, "telegram_notify", None)
     if notifier:
-        text = _format_telegram_message(symbol=symbol, signal=signal, side=side, price=price)
+        req_id = getattr(request.state, "request_id", None)
+        text = _format_telegram_message(
+            payload=payload,
+            symbol=symbol,
+            signal=signal,
+            side=side,
+            contracts=contracts,
+            price=price,
+            req_id=req_id,
+        )
         background_tasks.add_task(notifier, text)
     
     return response
