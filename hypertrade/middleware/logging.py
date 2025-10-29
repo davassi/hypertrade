@@ -49,14 +49,16 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             duration_ms = int((time.perf_counter() - start) * 1000)
             status = response.status_code if response else 500
             route = getattr(request.scope.get("route"), "path", path)
-            self._log_request(
-                method=method,
-                route=route,
-                status=status,
-                duration_ms=duration_ms,
-                client_ip=client_ip,
-                req_id=req_id,
-            )
+            # Optionally suppress noisy 404s (random scans to unknown paths)
+            if not (settings.suppress_404_logs and status == 404 and request.scope.get("route") is None):
+                self._log_request(
+                    method=method,
+                    route=route,
+                    status=status,
+                    duration_ms=duration_ms,
+                    client_ip=client_ip,
+                    req_id=req_id,
+                )
             if response is not None:
                 response.headers["X-Request-ID"] = req_id
                 response.headers["X-Process-Time"] = f"{duration_ms}ms"

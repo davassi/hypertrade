@@ -16,13 +16,21 @@ def _extract_request_id(response_headers: Optional[dict[str, str]]) -> Optional[
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     req_id = getattr(request.state, "request_id", None)
-    log.warning(
-        "HTTPException %s %s -> %s req_id=%s",
-        request.method,
-        request.url.path,
-        exc.status_code,
-        req_id,
-    )
+    # Optionally suppress noisy 404 logs from scans
+    try:
+        settings = request.app.state.settings
+        suppress_404 = getattr(settings, "suppress_404_logs", False)
+    except Exception:
+        suppress_404 = False
+
+    if not (suppress_404 and exc.status_code == 404):
+        log.warning(
+            "HTTPException %s %s -> %s req_id=%s",
+            request.method,
+            request.url.path,
+            exc.status_code,
+            req_id,
+        )
     content = {
         "error": {
             "status": exc.status_code,

@@ -5,7 +5,20 @@ from fastapi.routing import APIRoute
 
 from .version import __version__
 
-def setup_logging(level: str = "INFO") -> None:
+class _MessageFilter(logging.Filter):
+    def __init__(self, *, deny_contains: list[str] | None = None):
+        super().__init__()
+        self.deny_contains = deny_contains or []
+
+    def filter(self, record: logging.LogRecord) -> bool:  # True -> keep
+        msg = record.getMessage()
+        for frag in self.deny_contains:
+            if frag in msg:
+                return False
+        return True
+
+
+def setup_logging(level: str = "INFO", *, suppress_access: bool = False, suppress_invalid_http_warnings: bool = True) -> None:
     """Configure logging to use Uvicorn's format when possible.
 
     - If Uvicorn hasn't configured logging (e.g., running `python -m app`), apply
@@ -23,14 +36,18 @@ def setup_logging(level: str = "INFO") -> None:
             if "uvicorn.error" in loggers_cfg:
                 loggers_cfg["uvicorn.error"]["level"] = level
             if "uvicorn.access" in loggers_cfg:
-                loggers_cfg["uvicorn.access"]["level"] = level
+                loggers_cfg["uvicorn.access"]["level"] = "WARNING" if suppress_access else level
             logging.config.dictConfig(cfg)
     except Exception:
         # Fallback basic config
         logging.basicConfig(level=numeric)
 
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
-        logging.getLogger(name).setLevel(numeric)
+    logging.getLogger("uvicorn").setLevel(numeric)
+    err_logger = logging.getLogger("uvicorn.error")
+    err_logger.setLevel(numeric)
+    if suppress_invalid_http_warnings:
+        err_logger.addFilter(_MessageFilter(deny_contains=["Invalid HTTP request received."]))
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING if suppress_access else numeric)
 
 # Log a startup banner with key settings
 def log_startup_banner(

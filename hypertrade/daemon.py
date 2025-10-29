@@ -30,7 +30,11 @@ def create_daemon() -> FastAPI:
         msg = "Missing required environment variables: HYPERTRADE_MASTER_ADDR, HYPERTRADE_API_WALLET_PRIV, HYPERTRADE_SUBACCOUNT_ADDR. Export them in your shell or set them in .env."
         raise RuntimeError(msg) from e
 
-    setup_logging(settings.log_level)
+    setup_logging(
+        settings.log_level,
+        suppress_access=settings.suppress_access_logs,
+        suppress_invalid_http_warnings=settings.suppress_invalid_http_warnings,
+    )
     app.state.settings = settings
 
     # Pre-bind optional Telegram notifier to avoid per-request env access

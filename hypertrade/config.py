@@ -29,6 +29,10 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
+    # Reduce noisy logs from random scanners
+    suppress_access_logs: bool = False
+    suppress_404_logs: bool = True
+    suppress_invalid_http_warnings: bool = True
 
     # Optional webhook secret; if set, incoming payloads must include `general.secret` matching this value
     webhook_secret: Optional[SecretStr] = None
