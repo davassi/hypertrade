@@ -1,3 +1,5 @@
+"""JSON schema describing TradingView webhook payloads."""
+
 TRADINGVIEW_SCHEMA = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -63,7 +65,12 @@ TRADINGVIEW_SCHEMA = {
         },
         "market": {
             "type": "object",
-            "required": ["position", "position_size", "previous_position", "previous_position_size"],
+            "required": [
+                "position",
+                "position_size",
+                "previous_position",
+                "previous_position_size",
+            ],
             "properties": {
                 "position": {"type": "string", "enum": ["long", "short", "flat"]},
                 "position_size": {"type": ["string", "number"]},

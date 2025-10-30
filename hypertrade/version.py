@@ -1,2 +1,3 @@
-__version__ = "1.1.0"
+"""Project version for Hypertrade daemon."""
 
+__version__ = "1.1.0"

@@ -1,11 +1,18 @@
+"""Route security helpers: IP whitelisting and client IP extraction."""
+
 from typing import Iterable, Optional
 
 from fastapi import Depends, HTTPException, Request
 
 from .config import get_settings
 
-# Extract client IP from request, considering X-Forwarded-For if trusted
+
 def _extract_client_ip(request: Request, trust_forwarded_for: bool) -> Optional[str]:
+    """Return best-effort client IP.
+
+    If ``trust_forwarded_for`` is true and an ``X-Forwarded-For`` header is present,
+    use its left-most value. Otherwise, fall back to the socket peer address.
+    """
     if trust_forwarded_for:
         xff = request.headers.get("x-forwarded-for")
         if xff:
@@ -17,8 +24,12 @@ def _extract_client_ip(request: Request, trust_forwarded_for: bool) -> Optional[
         return request.client.host
     return None
 
-# Dependency to enforce IP whitelist on routes
 def require_ip_whitelisted(allowed_ips: Optional[Iterable[str]] = None):
+    """FastAPI dependency that enforces a simple IP whitelist.
+
+    If app settings have ``ip_whitelist_enabled`` on, only requests from ``allowed_ips``
+    (or ``settings.tv_webhook_ips`` when not provided) are permitted.
+    """
     async def dependency(request: Request, settings=Depends(get_settings)):
         if not settings.ip_whitelist_enabled:
             return  # whitelist disabled; allow
