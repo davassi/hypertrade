@@ -71,7 +71,9 @@ def log_startup_banner(
     """Log a startup banner with ASCII 'HYPERTRADE' and key settings."""
     logger = pylog.getLogger("uvicorn.error")
     listening = (
-        f"http://{host}:{port}" if host is not None and port is not None else "uvicorn-configured address"
+        f"http://{host}:{port}"
+        if host is not None and port is not None
+        else "uvicorn-configured address"
     )
     ascii_art = (
         "\n".join(

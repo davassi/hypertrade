@@ -110,4 +110,3 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         except Exception:
             pass
         return response
-

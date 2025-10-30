@@ -1,6 +1,9 @@
+"""ASGI app factory and configuration for the Hypertrade daemon."""
+
 import logging
 from fastapi import FastAPI
 from pydantic import ValidationError
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import get_settings
 from .logging import setup_logging, log_startup_banner, log_endpoints
@@ -11,15 +14,12 @@ from .routes.health import router as health_router
 from .routes.webhooks import router as webhooks_router
 from .notify import send_telegram_message
 from .exception_handlers import register_exception_handlers
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 log = logging.getLogger("uvicorn.error")
 
-# Change the port number and start the daemon with: 
-# 
-# $ uvicorn hypertrade.daemon:app --host 0.0.0.0 --port 6487
-#
+
 def create_daemon() -> FastAPI:
+    """Create and configure the FastAPI app."""
 
     # Create app first so we can attach settings or fail cleanly
     app = FastAPI(title="Hypertrade Daemon", version="1.0.0")
@@ -28,7 +28,11 @@ def create_daemon() -> FastAPI:
     try:
         settings = get_settings()
     except ValidationError as e:
-        msg = "Missing required environment variables: HYPERTRADE_MASTER_ADDR, HYPERTRADE_API_WALLET_PRIV, HYPERTRADE_SUBACCOUNT_ADDR. Export them in your shell or set them in .env."
+        msg = (
+            "Missing required environment variables: "
+            "HYPERTRADE_MASTER_ADDR, HYPERTRADE_API_WALLET_PRIV, HYPERTRADE_SUBACCOUNT_ADDR. "
+            "Export them in your shell or set them in .env."
+        )
         raise RuntimeError(msg) from e
 
     setup_logging(
@@ -56,9 +60,10 @@ def create_daemon() -> FastAPI:
         app.state.telegram_notify = None
 
     # Finalize logging with configured level and add middleware
-    
     app.add_middleware(LoggingMiddleware)
-    app.add_middleware(ContentLengthLimitMiddleware, max_bytes=settings.max_payload_bytes)
+    app.add_middleware(
+        ContentLengthLimitMiddleware, max_bytes=settings.max_payload_bytes
+    )
     if settings.rate_limit_enabled:
         whitelist = settings.tv_webhook_ips if settings.ip_whitelist_enabled else []
         app.add_middleware(
@@ -72,7 +77,9 @@ def create_daemon() -> FastAPI:
             whitelist_ips=whitelist,
         )
     if settings.enable_trusted_hosts and settings.trusted_hosts:
-        app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
+        app.add_middleware(
+            TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts
+        )
     register_exception_handlers(app)
     log.info(
         "App started env=%s whitelist_enabled=%s log_level=%s",
@@ -81,7 +88,7 @@ def create_daemon() -> FastAPI:
         settings.log_level,
     )
     log.info("Loaded %d TV webhook IPs", len(settings.tv_webhook_ips or []))
-    
+
     # Showing our startup banner
     log_startup_banner(
         host=None,
@@ -97,8 +104,9 @@ def create_daemon() -> FastAPI:
 
     # Log endpoints after routes are registered
     log_endpoints(app)
-    
+
     return app
+
 
 # Expose ASGI app for uvicorn
 app = create_daemon()

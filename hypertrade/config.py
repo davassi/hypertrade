@@ -1,11 +1,14 @@
+"""Application configuration using Pydantic BaseSettings."""
+
 from functools import lru_cache
 from typing import List, Optional
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Application settings using pydantic
+
 class Settings(BaseSettings):
-    
+    """Runtime settings loaded from env/.env with validation."""
+
     # App defaults
     app_name: str = "Hypertrade Daemon"
     environment: str = "local"
@@ -18,7 +21,7 @@ class Settings(BaseSettings):
     # Optional IP whitelist controls
     ip_whitelist_enabled: bool = False
     trust_forwarded_for: bool = True
-    
+
     # tv_webhook_ips are hardcoded defaults, can be overridden in env
     tv_webhook_ips: List[str] = [
         "52.89.214.238",
@@ -42,7 +45,8 @@ class Settings(BaseSettings):
     rate_limit_only_paths: List[str] = []
     rate_limit_exclude_paths: List[str] = ["/health"]
 
-    # Optional webhook secret; if set, incoming payloads must include `general.secret` matching this value
+    # Optional webhook secret; if set, incoming payloads must include
+    # `general.secret` matching this value
     webhook_secret: Optional[SecretStr] = None
 
     # Hardening & limits
