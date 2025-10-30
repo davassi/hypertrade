@@ -1,18 +1,21 @@
+"""TradingView webhook endpoint: validate, parse and respond."""
+
 import logging
 import hmac
 
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi import BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
-from jsonschema import validate as jsonschema_validate, ValidationError as JSONSchemaValidationError
+from jsonschema import (
+    validate as jsonschema_validate,
+    ValidationError as JSONSchemaValidationError,
+)
 
 from ..schemas.tradingview_schema import TRADINGVIEW_SCHEMA
 from ..schemas.tradingview import TradingViewWebhook
 from ..security import require_ip_whitelisted
-from ..notify import send_telegram_message
 
 from ..routes.tradingview_enums import SignalType, PositionType, OrderAction, Side
 
@@ -34,15 +37,18 @@ def _require_json_content_type(request: Request) -> None:
     """Ensure the request has application/json content type or raise 415."""
     ctype = request.headers.get("content-type", "").lower()
     if "application/json" not in ctype:
-        raise HTTPException(status_code=415, detail="Unsupported Media Type: application/json required")
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported Media Type: application/json required",
+        )
 
 async def _read_json_body(request: Request) -> dict:
     """Read and parse JSON body; log full body on failure and raise 422."""
     try:
         return await request.json()
-    except Exception:
+    except Exception as exc:
         await _log_invalid_json_body(request)
-        raise HTTPException(status_code=422, detail="Invalid JSON body")
+        raise HTTPException(status_code=422, detail="Invalid JSON body") from exc
 
 def _validate_schema(raw: dict) -> None:
     """Validate payload against TradingView JSON schema; raise 422 with detail on error."""
@@ -53,8 +59,9 @@ def _validate_schema(raw: dict) -> None:
         detail = f"JSON schema validation error at '{path or '$'}': {e.message}"
         raise HTTPException(status_code=422, detail=detail)
 
-def _build_response(payload: TradingViewWebhook, *, signal: SignalType, side: Side, symbol: str) -> dict:
-    from datetime import datetime, timezone
+def _build_response(
+    payload: TradingViewWebhook, *, signal: SignalType, side: Side, symbol: str
+) -> dict:
     return {
         "status": "ok",
         "signal": signal.value,
@@ -80,7 +87,9 @@ def _format_telegram_message(
 ) -> str:
     # Prefer original precision from payload where possible
     contracts_text = str(payload.order.contracts)
-    price_text = str(payload.order.price) if payload.order.price is not None else "market"
+    price_text = (
+        str(payload.order.price) if payload.order.price is not None else "market"
+    )
     leverage = payload.general.leverage or "-"
     strategy = payload.general.strategy or "-"
     exchange = payload.general.exchange
@@ -109,39 +118,51 @@ def _format_telegram_message(
         lines.append(f"ReqID: {req_id}")
     return "\n".join(lines)
 
-def _parse_contracts_and_price(payload: TradingViewWebhook) -> Tuple[float, Optional[float]]:
+def _parse_contracts_and_price(
+    payload: TradingViewWebhook,
+) -> Tuple[float, Optional[float]]:
+    """Parse numeric fields from payload with proper error handling."""
     try:
         contracts = float(payload.order.contracts)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid 'contracts' value")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid 'contracts' value") from exc
     price = float(payload.order.price) if payload.order.price else None
     return contracts, price
 
-@router.post("/webhook", dependencies=[Depends(require_ip_whitelisted(None))], summary="TradingView webhook")
-async def tradingview_webhook(request: Request, background_tasks: BackgroundTasks) -> dict:
-    
+@router.post(
+    "/webhook",
+    dependencies=[Depends(require_ip_whitelisted(None))],
+    summary="TradingView webhook",
+)
+async def tradingview_webhook(
+    request: Request, background_tasks: BackgroundTasks
+) -> dict:
+    """Main webhook endpoint: validates, parses, logs, and returns a summary."""
     # Let's start with our checks.
-    
+
     # First: Require JSON content type
     _require_json_content_type(request)
-    
+
     # Second: Parse JSON body ourselves to avoid pre-validation errors on non-JSON content
     raw = await _read_json_body(request)
 
     # Third: JSON Schema validation on raw payload
     _validate_schema(raw)
 
-    # Fourth (Optional but recommended) secret enforcement: if env secret is set, 
+    # Fourth (Optional but recommended) secret enforcement: if env secret is set,
     # then the payload requires to carry a matching general.secret
     secret_enforcement(request, raw)
 
     # Pydantic parsing for strong typing and coercion
     payload = TradingViewWebhook.model_validate(raw)
-    
+
     # Now log a summary of the webhook payload
     log.info("Received TradingView webhook")
     log.info(
-        "\x1b[31mTradingView webhook: [%s %s %s] -> ACTION %s@%s contracts=%s ['%s'] alert='%s'\x1b[0m",
+        (
+            "\x1b[31mTradingView webhook: [%s %s %s] -> ACTION %s@%s "
+            "contracts=%s ['%s'] alert='%s'\x1b[0m"
+        ),
         payload.general.exchange,
         payload.general.ticker,
         payload.general.interval,
@@ -152,33 +173,38 @@ async def tradingview_webhook(request: Request, background_tasks: BackgroundTask
         payload.order.alert_message if payload.order.alert_message else "None",
     )
     log.debug("Full webhook payload: %s", raw)
-    
+
     # Fifth: processing logic here (TODO: would be good to enqueue the job)
     signal = parse_signal(payload)
     log.info("Parsed signal: %s", signal.value)
     symbol = payload.general.ticker.upper()
     log.info("TradingView ticker mapped to symbol: %s", symbol)
-    
+
     contracts, price = _parse_contracts_and_price(payload)
 
     side = signal_to_side(signal)
 
     if side is None or signal == SignalType.NO_ACTION:
-        log.info("No actionable signal. signal=%s payload_id=%s", signal.value, payload.order.id)
-        return JSONResponse({"status": "no_action", "signal": signal.value, "order_id": payload.order.id})
+        log.info(
+            "No actionable signal. signal=%s payload_id=%s",
+            signal.value,
+            payload.order.id,
+        )
+        return JSONResponse(
+            {"status": "no_action", "signal": signal.value, "order_id": payload.order.id}
+        )
 
-    # Execute plugging into Hyperliquid SDK 
+    # Execute plugging into Hyperliquid SDK
     #try:
         # result = client.place_order(symbol=symbol, side=side, qty=contracts, price=price, subaccount=subaccount)
     #except Exception as e:
     #    log.exception("Order placement failed")
     #    raise HTTPException(status_code=502, detail=f"Order placement failed: {e}")
 
-    
     # Finally: build a response
     response = _build_response(payload, signal=signal, side=side, symbol=symbol)
-    
-    # Optional: shoot the response to Telegram if configured 
+
+    # Optional: shoot the response to Telegram if configured
     notifier = getattr(request.app.state, "telegram_notify", None)
     if notifier:
         req_id = getattr(request.state, "request_id", None)
@@ -192,33 +218,51 @@ async def tradingview_webhook(request: Request, background_tasks: BackgroundTask
             req_id=req_id,
         )
         background_tasks.add_task(notifier, text)
-    
+
     return response
 
 # Check the webhook secret if configured in environment
-def secret_enforcement(request, raw):
+def secret_enforcement(request: Request, raw: dict) -> None:
+    """Enforce optional shared secret in `general.secret`.
+
+    If `HYPERTRADE_WEBHOOK_SECRET` (via settings) is set, the request JSON must
+    contain a matching `general.secret`. Otherwise raise 401.
+    """
     settings = request.app.state.settings
     env_secret = None
-    
+
     if getattr(settings, "webhook_secret", None):
         env_secret = settings.webhook_secret.get_secret_value()
-    
+
     if env_secret:
         incoming = None
         try:
             incoming = raw.get("general", {}).get("secret")
-        except Exception:
+        except Exception:  # keep broad for unexpected structures
             incoming = None
-    
+
         if not incoming or not hmac.compare_digest(str(incoming), str(env_secret)):
             log.warning("Webhook rejected: invalid secret")
             raise HTTPException(status_code=401, detail="Unauthorized: invalid webhook secret")
 
-# Enums and parsing logic 
+# Enums and parsing logic
 def signal_to_side(signal: SignalType) -> Optional[Side]:
-    if signal in (SignalType.OPEN_LONG, SignalType.CLOSE_SHORT, SignalType.ADD_LONG, SignalType.REVERSE_TO_LONG, SignalType.REDUCE_SHORT):
+    """Map SignalType to order Side, or None if not actionable."""
+    if signal in (
+        SignalType.OPEN_LONG,
+        SignalType.CLOSE_SHORT,
+        SignalType.ADD_LONG,
+        SignalType.REVERSE_TO_LONG,
+        SignalType.REDUCE_SHORT,
+    ):
         return Side.BUY
-    if signal in (SignalType.OPEN_SHORT, SignalType.CLOSE_LONG, SignalType.ADD_SHORT, SignalType.REVERSE_TO_SHORT, SignalType.REDUCE_LONG):
+    if signal in (
+        SignalType.OPEN_SHORT,
+        SignalType.CLOSE_LONG,
+        SignalType.ADD_SHORT,
+        SignalType.REVERSE_TO_SHORT,
+        SignalType.REDUCE_LONG,
+    ):
         return Side.SELL
     return None
 
@@ -230,7 +274,11 @@ def parse_signal(payload: TradingViewWebhook) -> SignalType:
     except Exception:
         current = PositionType.FLAT
     try:
-        previous = PositionType(payload.market.previous_position.lower()) if payload.market.previous_position else PositionType.FLAT
+        previous = (
+            PositionType(payload.market.previous_position.lower())
+            if payload.market.previous_position
+            else PositionType.FLAT
+        )
     except Exception:
         previous = PositionType.FLAT
     try:

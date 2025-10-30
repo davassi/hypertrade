@@ -1,3 +1,5 @@
+"""Lightweight Hyperliquid client abstraction used by webhook processing."""
+
 import os
 import time
 import logging
@@ -12,6 +14,8 @@ logger = logging.getLogger("uvicorn.error")
 
 @dataclass
 class OrderRequest:
+    """Parameters for placing an order on Hyperliquid."""
+    # pylint: disable=too-many-instance-attributes
     symbol: str
     side: Side
     qty: Decimal
@@ -25,6 +29,7 @@ class OrderRequest:
 
 @dataclass
 class OrderResult:
+    """Normalized order result returned to API clients."""
     status: str
     order_id: str
     symbol: str
@@ -37,7 +42,7 @@ class OrderResult:
 
 
 class HyperliquidError(Exception):
-    pass
+    """Raised for client-level errors or unimplemented operations."""
 
 
 class HyperliquidClient:
@@ -47,9 +52,15 @@ class HyperliquidClient:
     `_send_order` with real SDK calls when wiring up credentials.
     """
 
-    def __init__(self, *, base_url: Optional[str] = None, mock: bool = True,
-                 master_addr: Optional[str] = None, api_wallet_priv: Optional[str] = None,
-                 subaccount_addr: Optional[str] = None):
+    def __init__(
+        self,
+        *,
+        base_url: Optional[str] = None,
+        mock: bool = True,
+        master_addr: Optional[str] = None,
+        api_wallet_priv: Optional[str] = None,
+        subaccount_addr: Optional[str] = None,
+    ):
         self.base_url = base_url or os.getenv("HL_BASE_URL", "https://api.hyperliquid.xyz")
         self.mock = mock
         self.master_addr = master_addr
@@ -58,6 +69,7 @@ class HyperliquidClient:
 
     @classmethod
     def from_settings(cls, settings, *, mock: bool = True) -> "HyperliquidClient":
+        """Construct a client from app settings."""
         priv = None
         try:
             priv = settings.api_wallet_priv.get_secret_value() if getattr(settings, "api_wallet_priv", None) else None
@@ -71,6 +83,7 @@ class HyperliquidClient:
         )
 
     def place_order(self, req: OrderRequest) -> dict:
+        """Validate and place an order (mocked unless `mock=False`)."""
         # Basic validation/normalization
         if req.qty is None or Decimal(req.qty) <= 0:
             raise HyperliquidError("qty must be > 0")
@@ -81,7 +94,10 @@ class HyperliquidClient:
         return self._send_order(req)
 
     # Backward compatible shim (deprecated)
-    def place_order_simple(self, symbol: str, side: Side, qty: float, price: Optional[float], subaccount: str) -> dict:
+    def place_order_simple(
+        self, symbol: str, side: Side, qty: float, price: Optional[float], subaccount: str
+    ) -> dict:
+        """Backward-compatible shim kept for older call sites."""
         req = OrderRequest(
             symbol=symbol,
             side=side,
@@ -92,13 +108,22 @@ class HyperliquidClient:
         return self.place_order(req)
 
     def _send_order(self, req: OrderRequest) -> dict:
+        """Internal send; mocked unless real SDK wiring is added."""
         if self.mock:
             # Simulate success
             oid = f"mock-{int(time.time()*1000)}"
             logger.info(
-                "[MOCK] place_order: symbol=%s side=%s qty=%s price=%s reduceOnly=%s postOnly=%s sub=%s",
-                req.symbol, req.side.value, str(req.qty), str(req.price) if req.price is not None else None,
-                req.reduce_only, req.post_only, req.subaccount or self.subaccount_addr,
+                (
+                    "[MOCK] place_order: symbol=%s side=%s qty=%s price=%s "
+                    "reduceOnly=%s postOnly=%s sub=%s"
+                ),
+                req.symbol,
+                req.side.value,
+                str(req.qty),
+                str(req.price) if req.price is not None else None,
+                req.reduce_only,
+                req.post_only,
+                req.subaccount or self.subaccount_addr,
             )
             result = OrderResult(
                 status="ok",
@@ -116,6 +141,15 @@ class HyperliquidClient:
         # Real implementation placeholder; integrate official SDK here
         # Example (pseudocode):
         # client = OfficialHLClient(priv_key=self.api_wallet_priv, master=self.master_addr)
-        # resp = client.order(symbol=req.symbol, side=req.side.value, size=str(req.qty), price=str(req.price) if req.price else None, reduceOnly=req.reduce_only, postOnly=req.post_only, clientId=req.client_id, subaccount=req.subaccount or self.subaccount_addr)
+        # resp = client.order(
+        #     symbol=req.symbol,
+        #     side=req.side.value,
+        #     size=str(req.qty),
+        #     price=str(req.price) if req.price else None,
+        #     reduceOnly=req.reduce_only,
+        #     postOnly=req.post_only,
+        #     clientId=req.client_id,
+        #     subaccount=req.subaccount or self.subaccount_addr,
+        # )
         # return resp
         raise HyperliquidError("Real Hyperliquid SDK integration not implemented")
