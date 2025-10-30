@@ -1,7 +1,7 @@
 """Exception handlers for FastAPI app with concise JSON responses."""
 
 import logging as pylog
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -23,7 +23,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     try:
         settings = request.app.state.settings
         suppress_404 = getattr(settings, "suppress_404_logs", False)
-    except Exception:
+    except AttributeError:
         suppress_404 = False
 
     if not (suppress_404 and exc.status_code == 404):

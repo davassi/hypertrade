@@ -1,13 +1,15 @@
 """Logging utilities: configure Uvicorn-compatible logs and startup banner."""
 
 import logging as pylog
-from logging import config as logging_config
+import logging.config as logging_config
 from typing import Iterable, Optional, List
 from fastapi.routing import APIRoute
+from uvicorn.config import LOGGING_CONFIG
 
 from .version import __version__
 
 
+# pylint: disable=too-few-public-methods
 class _MessageFilter(pylog.Filter):
     def __init__(self, *, deny_contains: Optional[List[str]] = None):
         super().__init__()
@@ -34,23 +36,17 @@ def setup_logging(
     - Otherwise, only adjust levels so our loggers integrate with Uvicorn's handlers.
     """
     numeric = getattr(pylog, level, pylog.INFO)
-    try:
-        from uvicorn.config import LOGGING_CONFIG
-
-        root = pylog.getLogger()
-        if not root.handlers:
-            cfg = LOGGING_CONFIG.copy()
-            loggers_cfg = cfg.get("loggers", {})
-            if "uvicorn.error" in loggers_cfg:
-                loggers_cfg["uvicorn.error"]["level"] = level
-            if "uvicorn.access" in loggers_cfg:
-                loggers_cfg["uvicorn.access"]["level"] = (
-                    "WARNING" if suppress_access else level
-                )
-            logging_config.dictConfig(cfg)
-    except Exception:
-        # Fallback basic config
-        pylog.basicConfig(level=numeric)
+    root = pylog.getLogger()
+    if not root.handlers:
+        cfg = LOGGING_CONFIG.copy()
+        loggers_cfg = cfg.get("loggers", {})
+        if "uvicorn.error" in loggers_cfg:
+            loggers_cfg["uvicorn.error"]["level"] = level
+        if "uvicorn.access" in loggers_cfg:
+            loggers_cfg["uvicorn.access"]["level"] = (
+                "WARNING" if suppress_access else level
+            )
+        logging_config.dictConfig(cfg)
 
     pylog.getLogger("uvicorn").setLevel(numeric)
     err_logger = pylog.getLogger("uvicorn.error")
@@ -113,4 +109,4 @@ def log_endpoints(app) -> None:
     header = f"Available endpoints ({len(lines)}):"
     logger.info("%s", header)
     for path, methods, name in lines:
-        logger.info("  %-7s %s", methods, path)
+        logger.info("  %-7s %-40s (%s)", methods, path, name)

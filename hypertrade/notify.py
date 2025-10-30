@@ -1,29 +1,21 @@
+"""Telegram notification utility using PyTelegramBotAPI."""
+
 import logging
+from telebot import TeleBot
+from telebot.apihelper import ApiTelegramException
+
 
 log = logging.getLogger("uvicorn.error")
 
 
 def send_telegram_message(token: str, chat_id: str, text: str) -> bool:
-    """Send a Telegram message via pyTelegramBotAPI.
-
-    - Lazy-imports `telebot` to keep the dependency optional at runtime.
-    - Returns True on success, logs and returns False on failure.
-    """
+    """Send a Telegram message; return True on success, False otherwise."""
     if not token or not chat_id or not text:
         return False
     try:
-        # Lazy import to allow tests to stub or projects to run without it until used
-        import telebot  # type: ignore
-    except Exception:
-        # No stacktrace; keep logs clean in production
-        log.warning("Telegram library not installed; skipping send")
-        return False
-
-    try:
-        bot = telebot.TeleBot(token)
+        bot = TeleBot(token)
         bot.send_message(chat_id, text)
         return True
-    except Exception:
-        # Log concise message without stacktrace
-        log.warning("Telegram send failed")
+    except ApiTelegramException as exc:
+        log.warning("Telegram send failed: %s", exc)
         return False

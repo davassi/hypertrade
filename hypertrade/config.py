@@ -1,5 +1,6 @@
 """Application configuration using Pydantic BaseSettings."""
 
+import json
 from functools import lru_cache
 from typing import List, Optional
 from pydantic import SecretStr, field_validator
@@ -91,13 +92,11 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             s = v.strip()
             if s.startswith("[") and s.endswith("]"):
-                import json
-
                 try:
                     parsed = json.loads(s)
                     if isinstance(parsed, list):
                         return [str(x).strip() for x in parsed]
-                except Exception:
+                except (ValueError, TypeError, json.JSONDecodeError):
                     pass
             # fallback: comma-separated
             return [part.strip() for part in s.split(",") if part.strip()]
@@ -120,12 +119,11 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             s = v.strip()
             if s.startswith("[") and s.endswith("]"):
-                import json
                 try:
                     parsed = json.loads(s)
                     if isinstance(parsed, list):
                         return [str(x).strip() for x in parsed]
-                except Exception:
+                except (ValueError, TypeError, json.JSONDecodeError):
                     pass
             return [part.strip() for part in s.split(",") if part.strip()]
         return v
@@ -133,5 +131,5 @@ class Settings(BaseSettings):
 # Cached settings instance
 @lru_cache
 def get_settings() -> Settings:
-    # Instantiation validates that required env vars are present
+    """Return a cached Settings instance (validates env on first call)."""
     return Settings()

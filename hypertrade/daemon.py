@@ -22,7 +22,7 @@ def create_daemon() -> FastAPI:
     """Create and configure the FastAPI app."""
 
     # Create app first so we can attach settings or fail cleanly
-    app = FastAPI(title="Hypertrade Daemon", version="1.0.0")
+    app_ = FastAPI(title="Hypertrade Daemon", version="1.0.0")
 
     # Load settings and configure logging; provide clear error if env missing
     try:
@@ -40,7 +40,7 @@ def create_daemon() -> FastAPI:
         suppress_access=settings.suppress_access_logs,
         suppress_invalid_http_warnings=settings.suppress_invalid_http_warnings,
     )
-    app.state.settings = settings
+    app_.state.settings = settings
 
     # Pre-bind optional Telegram notifier to avoid per-request env access
     if (
@@ -54,19 +54,19 @@ def create_daemon() -> FastAPI:
         def _telegram_notify(text: str, _token=token, _chat_id=chat_id):
             return send_telegram_message(_token, _chat_id, text)
 
-        app.state.telegram_notify = _telegram_notify
+        app_.state.telegram_notify = _telegram_notify
         log.info("Telegram notifications enabled")
     else:
-        app.state.telegram_notify = None
+        app_.state.telegram_notify = None
 
     # Finalize logging with configured level and add middleware
-    app.add_middleware(LoggingMiddleware)
-    app.add_middleware(
+    app_.add_middleware(LoggingMiddleware)
+    app_.add_middleware(
         ContentLengthLimitMiddleware, max_bytes=settings.max_payload_bytes
     )
     if settings.rate_limit_enabled:
         whitelist = settings.tv_webhook_ips if settings.ip_whitelist_enabled else []
-        app.add_middleware(
+        app_.add_middleware(
             RateLimitMiddleware,
             max_requests=settings.rate_limit_max_requests,
             window_seconds=settings.rate_limit_window_seconds,
@@ -77,10 +77,10 @@ def create_daemon() -> FastAPI:
             whitelist_ips=whitelist,
         )
     if settings.enable_trusted_hosts and settings.trusted_hosts:
-        app.add_middleware(
+        app_.add_middleware(
             TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts
         )
-    register_exception_handlers(app)
+    register_exception_handlers(app_)
     log.info(
         "App started env=%s whitelist_enabled=%s log_level=%s",
         settings.environment,
@@ -99,13 +99,13 @@ def create_daemon() -> FastAPI:
     )
 
     # Setting the Routers up
-    app.include_router(health_router)
-    app.include_router(webhooks_router)
+    app_.include_router(health_router)
+    app_.include_router(webhooks_router)
 
     # Log endpoints after routes are registered
-    log_endpoints(app)
+    log_endpoints(app_)
 
-    return app
+    return app_
 
 
 # Expose ASGI app for uvicorn

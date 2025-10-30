@@ -9,6 +9,7 @@ log = logging.getLogger("uvicorn.error")
 
 @router.get("/health", summary="Health check")
 def health() -> dict[str, str]:
+    """Return a simple OK status for liveness probes."""
     log.info("Health check OK")
     #  Simple health check endpoint
     #  it will be expanded checking hyperliquid connection
