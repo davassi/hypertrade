@@ -6,6 +6,7 @@ from .config import get_settings
 from .logging import setup_logging, log_startup_banner, log_endpoints
 from .middleware.logging import LoggingMiddleware
 from .middleware.content_limit import ContentLengthLimitMiddleware
+from .middleware.rate_limit import RateLimitMiddleware
 from .routes.health import router as health_router
 from .routes.webhooks import router as webhooks_router
 from .notify import send_telegram_message
@@ -58,6 +59,18 @@ def create_daemon() -> FastAPI:
     
     app.add_middleware(LoggingMiddleware)
     app.add_middleware(ContentLengthLimitMiddleware, max_bytes=settings.max_payload_bytes)
+    if settings.rate_limit_enabled:
+        whitelist = settings.tv_webhook_ips if settings.ip_whitelist_enabled else []
+        app.add_middleware(
+            RateLimitMiddleware,
+            max_requests=settings.rate_limit_max_requests,
+            window_seconds=settings.rate_limit_window_seconds,
+            burst=settings.rate_limit_burst,
+            trust_forwarded_for=settings.trust_forwarded_for,
+            only_paths=settings.rate_limit_only_paths,
+            exclude_paths=settings.rate_limit_exclude_paths,
+            whitelist_ips=whitelist,
+        )
     if settings.enable_trusted_hosts and settings.trusted_hosts:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
     register_exception_handlers(app)

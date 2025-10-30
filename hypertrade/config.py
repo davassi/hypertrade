@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     suppress_404_logs: bool = True
     suppress_invalid_http_warnings: bool = True
 
+    # Rate limiting (basic in-memory, per-IP)
+    rate_limit_enabled: bool = True
+    rate_limit_window_seconds: int = 60
+    rate_limit_max_requests: int = 120
+    rate_limit_burst: int = 30
+    rate_limit_only_paths: List[str] = []
+    rate_limit_exclude_paths: List[str] = ["/health"]
+
     # Optional webhook secret; if set, incoming payloads must include `general.secret` matching this value
     webhook_secret: Optional[SecretStr] = None
 
@@ -97,6 +105,26 @@ class Settings(BaseSettings):
         level = (v or "").strip().upper()
         valid = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
         return level if level in valid else "INFO"
+
+    @field_validator("rate_limit_only_paths", "rate_limit_exclude_paths", mode="before")
+    @classmethod
+    def _parse_path_list(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            s = v.strip()
+            if s.startswith("[") and s.endswith("]"):
+                import json
+                try:
+                    parsed = json.loads(s)
+                    if isinstance(parsed, list):
+                        return [str(x).strip() for x in parsed]
+                except Exception:
+                    pass
+            return [part.strip() for part in s.split(",") if part.strip()]
+        return v
 
 # Cached settings instance
 @lru_cache
