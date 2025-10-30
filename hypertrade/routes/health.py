@@ -1,5 +1,7 @@
-from fastapi import APIRouter
+"""Simple health check endpoint."""
+
 import logging
+from fastapi import APIRouter
 
 router = APIRouter(tags=["health"])
 
@@ -11,4 +13,3 @@ def health() -> dict[str, str]:
     #  Simple health check endpoint
     #  it will be expanded checking hyperliquid connection
     return {"status": "ok"}
-

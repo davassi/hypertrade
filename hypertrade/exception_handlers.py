@@ -1,4 +1,6 @@
-import logging
+"""Exception handlers for FastAPI app with concise JSON responses."""
+
+import logging as pylog
 from typing import Any, Optional
 
 from fastapi import FastAPI, Request
@@ -7,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-log = logging.getLogger("uvicorn.error")
+log = pylog.getLogger("uvicorn.error")
 
 def _extract_request_id(response_headers: Optional[dict[str, str]]) -> Optional[str]:
     if not response_headers:
@@ -15,6 +17,7 @@ def _extract_request_id(response_headers: Optional[dict[str, str]]) -> Optional[
     return response_headers.get("X-Request-ID")
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Handle Starlette HTTP exceptions uniformly."""
     req_id = getattr(request.state, "request_id", None)
     # Optionally suppress noisy 404 logs from scans
     try:
@@ -47,6 +50,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     )
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle FastAPI validation errors with minimal noise."""
     req_id = getattr(request.state, "request_id", None)
     # Do not log stack traces for validation errors; keep concise
     log.warning(
@@ -73,6 +77,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all handler for unexpected exceptions."""
     req_id = getattr(request.state, "request_id", None)
     # Avoid stacktraces; summarize error type and request id
     log.error(
@@ -97,6 +102,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 def register_exception_handlers(app: FastAPI) -> None:
+    """Register all custom exception handlers on the app."""
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)

@@ -1,1 +1,1 @@
-
+"""Route package initializer."""

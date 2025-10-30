@@ -1,4 +1,6 @@
-import logging
+"""Request logging middleware with per-request IDs and timing."""
+
+import logging as pylog
 import time
 import uuid
 
@@ -13,9 +15,18 @@ from ..security import _extract_client_ip
 class LoggingMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp):
         super().__init__(app)
-        self.logger = logging.getLogger("uvicorn.error")
+        self.logger = pylog.getLogger("uvicorn.error")
 
-    def _log_request(self, *, method: str, route: str, status: int, duration_ms: int, client_ip: str, req_id: str) -> None:
+    def _log_request(
+        self,
+        *,
+        method: str,
+        route: str,
+        status: int,
+        duration_ms: int,
+        client_ip: str,
+        req_id: str,
+    ) -> None:
         self.logger.info(
             "%s %s -> %s %dms ip=%s req_id=%s",
             method,
@@ -50,7 +61,11 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             status = response.status_code if response else 500
             route = getattr(request.scope.get("route"), "path", path)
             # Optionally suppress noisy 404s (random scans to unknown paths)
-            if not (settings.suppress_404_logs and status == 404 and request.scope.get("route") is None):
+            if not (
+                settings.suppress_404_logs
+                and status == 404
+                and request.scope.get("route") is None
+            ):
                 self._log_request(
                     method=method,
                     route=route,
