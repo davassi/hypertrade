@@ -28,7 +28,7 @@ async def _log_invalid_json_body(request: Request) -> None:
     try:
         body_bytes = await request.body()
         body_text = body_bytes.decode("utf-8", errors="replace")
-    except Exception:
+    except (RuntimeError, UnicodeDecodeError):
         body_text = "<unreadable>"
     req_id = getattr(request.state, "request_id", None)
     log.warning("Invalid JSON body req_id=%s body=%s", req_id, body_text)
@@ -107,7 +107,11 @@ def _format_telegram_message(
         f"HyperTrade Webhook",
         f"Symbol: {symbol} @ {exchange}",
         f"Signal: {signal.value} | Side: {side.value} | Leverage: {leverage}",
-        f"Order: action={payload.order.action} id={order_id} contracts={contracts_text} price={price_text}",
+        (
+            "Order: action="
+            f"{payload.order.action} id={order_id} "
+            f"contracts={contracts_text} price={price_text}"
+        ),
         f"Position: {prev_pos}({prev_sz}) -> {cur_pos}({cur_sz})",
         f"Strategy: {strategy} | Interval: {interval}",
         f"Times: time={t_time} now={t_now}",
@@ -195,8 +199,14 @@ async def tradingview_webhook(
         )
 
     # Execute plugging into Hyperliquid SDK
-    #try:
-        # result = client.place_order(symbol=symbol, side=side, qty=contracts, price=price, subaccount=subaccount)
+    # try:
+    #     result = client.place_order(
+    #         symbol=symbol,
+    #         side=side,
+    #         qty=contracts,
+    #         price=price,
+    #         subaccount=subaccount,
+    #     )
     #except Exception as e:
     #    log.exception("Order placement failed")
     #    raise HTTPException(status_code=502, detail=f"Order placement failed: {e}")
@@ -235,12 +245,7 @@ def secret_enforcement(request: Request, raw: dict) -> None:
         env_secret = settings.webhook_secret.get_secret_value()
 
     if env_secret:
-        incoming = None
-        try:
-            incoming = raw.get("general", {}).get("secret")
-        except Exception:  # keep broad for unexpected structures
-            incoming = None
-
+        incoming = raw.get("general", {}).get("secret")
         if not incoming or not hmac.compare_digest(str(incoming), str(env_secret)):
             log.warning("Webhook rejected: invalid secret")
             raise HTTPException(status_code=401, detail="Unauthorized: invalid webhook secret")
@@ -271,7 +276,7 @@ def parse_signal(payload: TradingViewWebhook) -> SignalType:
     # Coerce to enums safely
     try:
         current = PositionType(payload.market.position.lower())
-    except Exception:
+    except (ValueError, AttributeError):
         current = PositionType.FLAT
     try:
         previous = (
@@ -279,21 +284,33 @@ def parse_signal(payload: TradingViewWebhook) -> SignalType:
             if payload.market.previous_position
             else PositionType.FLAT
         )
-    except Exception:
+    except (ValueError, AttributeError):
         previous = PositionType.FLAT
     try:
         action = OrderAction(payload.order.action.lower())
-    except Exception:
+    except (ValueError, AttributeError):
         return SignalType.NO_ACTION
 
     # Open/Close
     if previous == PositionType.FLAT and current == PositionType.LONG and action == OrderAction.BUY:
         return SignalType.OPEN_LONG
-    if previous == PositionType.LONG and current == PositionType.FLAT and action == OrderAction.SELL:
+    if (
+        previous == PositionType.LONG
+        and current == PositionType.FLAT
+        and action == OrderAction.SELL
+    ):
         return SignalType.CLOSE_LONG
-    if previous == PositionType.FLAT and current == PositionType.SHORT and action == OrderAction.SELL:
+    if (
+        previous == PositionType.FLAT
+        and current == PositionType.SHORT
+        and action == OrderAction.SELL
+    ):
         return SignalType.OPEN_SHORT
-    if previous == PositionType.SHORT and current == PositionType.FLAT and action == OrderAction.BUY:
+    if (
+        previous == PositionType.SHORT
+        and current == PositionType.FLAT
+        and action == OrderAction.BUY
+    ):
         return SignalType.CLOSE_SHORT
 
     # Same-side changes (scale or partial closes)

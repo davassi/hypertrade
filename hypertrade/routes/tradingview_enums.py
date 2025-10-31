@@ -1,18 +1,26 @@
+"""Enum definitions used by the TradingView webhook route."""
+
 from enum import Enum
 
-# Enums for tradingview route
+
 class PositionType(str, Enum):
+    """Current or previous position state reported by TradingView."""
+
     FLAT = "flat"
     LONG = "long"
     SHORT = "short"
 
-# Enums for order actions
+
 class OrderAction(str, Enum):
+    """Action associated with the order contained in the webhook."""
+
     BUY = "buy"
     SELL = "sell"
 
-# Enums for signal types
+
 class SignalType(str, Enum):
+    """Normalized trading signal derived from webhook payload state changes."""
+
     OPEN_LONG = "OPEN_LONG"
     CLOSE_LONG = "CLOSE_LONG"
     OPEN_SHORT = "OPEN_SHORT"
@@ -25,7 +33,9 @@ class SignalType(str, Enum):
     REVERSE_TO_SHORT = "REVERSE_TO_SHORT"
     NO_ACTION = "NO_ACTION"
 
-# Enums for order sides
+
 class Side(str, Enum):
+    """Order side mapping used when placing orders in exchanges."""
+
     BUY = "buy"
     SELL = "sell"

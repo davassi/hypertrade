@@ -70,11 +70,11 @@ class HyperliquidClient:
     @classmethod
     def from_settings(cls, settings, *, mock: bool = True) -> "HyperliquidClient":
         """Construct a client from app settings."""
-        priv = None
-        try:
-            priv = settings.api_wallet_priv.get_secret_value() if getattr(settings, "api_wallet_priv", None) else None
-        except Exception:
-            priv = None
+        priv = (
+            settings.api_wallet_priv.get_secret_value()
+            if getattr(settings, "api_wallet_priv", None)
+            else None
+        )
         return cls(
             mock=mock,
             master_addr=getattr(settings, "master_addr", None),
