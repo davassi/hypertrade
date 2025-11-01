@@ -30,6 +30,7 @@ class OrderRequest:
 @dataclass
 class OrderResult:
     """Normalized order result returned to API clients."""
+    # pylint: disable=too-many-instance-attributes
     status: str
     order_id: str
     symbol: str
@@ -61,6 +62,7 @@ class HyperliquidClient:
         api_wallet_priv: Optional[str] = None,
         subaccount_addr: Optional[str] = None,
     ):
+        # pylint: disable=too-many-arguments
         self.base_url = base_url or os.getenv("HL_BASE_URL", "https://api.hyperliquid.xyz")
         self.mock = mock
         self.master_addr = master_addr
@@ -98,6 +100,7 @@ class HyperliquidClient:
         self, symbol: str, side: Side, qty: float, price: Optional[float], subaccount: str
     ) -> dict:
         """Backward-compatible shim kept for older call sites."""
+        # pylint: disable=too-many-arguments,too-many-positional-arguments
         req = OrderRequest(
             symbol=symbol,
             side=side,

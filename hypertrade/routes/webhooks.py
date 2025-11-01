@@ -46,7 +46,7 @@ async def _read_json_body(request: Request) -> dict:
     """Read and parse JSON body; log full body on failure and raise 422."""
     try:
         return await request.json()
-    except Exception as exc:
+    except (ValueError, TypeError, UnicodeDecodeError) as exc:
         await _log_invalid_json_body(request)
         raise HTTPException(status_code=422, detail="Invalid JSON body") from exc
 
@@ -81,8 +81,6 @@ def _format_telegram_message(
     symbol: str,
     signal: SignalType,
     side: Side,
-    contracts: float,
-    price: Optional[float],
     req_id: Optional[str],
 ) -> str:
     # Prefer original precision from payload where possible
@@ -104,7 +102,7 @@ def _format_telegram_message(
     t_now = payload.general.timenow.isoformat()
 
     lines = [
-        f"HyperTrade Webhook",
+        "HyperTrade Webhook",
         f"Symbol: {symbol} @ {exchange}",
         f"Signal: {signal.value} | Side: {side.value} | Leverage: {leverage}",
         (
@@ -223,8 +221,6 @@ async def tradingview_webhook(
             symbol=symbol,
             signal=signal,
             side=side,
-            contracts=contracts,
-            price=price,
             req_id=req_id,
         )
         background_tasks.add_task(notifier, text)
@@ -273,6 +269,7 @@ def signal_to_side(signal: SignalType) -> Optional[Side]:
 
 def parse_signal(payload: TradingViewWebhook) -> SignalType:
     """Return a normalized SignalType based on payload contents using Enums."""
+    # pylint: disable=too-many-return-statements,too-many-branches
     # Coerce to enums safely
     try:
         current = PositionType(payload.market.position.lower())
