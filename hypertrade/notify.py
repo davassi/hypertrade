@@ -12,13 +12,12 @@ log = logging.getLogger("uvicorn.error")
 # Defensive import: allow tests to inject a minimal `telebot` stub
 try:  # pragma: no cover - import shape differs across environments
     from telebot import TeleBot  # type: ignore
-    try:
-        # In some tests a fake `telebot` object is injected without submodules
+    try:  # In some tests a fake `telebot` object is injected without submodules
         from telebot.apihelper import ApiTelegramException  # type: ignore
-    except Exception:  # noqa: BLE001 - broad to cover stubbed modules
+    except (ImportError, AttributeError):
         class ApiTelegramException(Exception):  # type: ignore
             pass
-except Exception:  # noqa: BLE001 - library might be unavailable in CI
+except ImportError:  # library might be unavailable in CI
     TeleBot = None  # type: ignore
 
     class ApiTelegramException(Exception):  # type: ignore

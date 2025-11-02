@@ -182,7 +182,7 @@ async def tradingview_webhook(
     symbol = payload.general.ticker.upper()
     log.info("TradingView ticker mapped to symbol: %s", symbol)
 
-    contracts, price = _parse_contracts_and_price(payload)
+    _parse_contracts_and_price(payload)
 
     side = signal_to_side(signal)
 
