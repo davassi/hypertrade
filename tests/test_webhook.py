@@ -165,5 +165,3 @@ def test_webhook_ip_whitelist_blocks_forwarded(monkeypatch):
     body = resp.json()
     assert body["error"]["status"] == 403
 
-
-    

@@ -97,7 +97,7 @@ class HyperliquidClient:
 
     # Backward compatible shim (deprecated)
     def place_order_simple(
-        self, symbol: str, side: Side, qty: float, price: Optional[float], subaccount: str
+        self, symbol: str, side: Side, qty: float, price: Optional[float], *, subaccount: str
     ) -> dict:
         """Backward-compatible shim kept for older call sites."""
         # pylint: disable=too-many-arguments
