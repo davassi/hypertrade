@@ -100,7 +100,7 @@ class HyperliquidClient:
         self, symbol: str, side: Side, qty: float, price: Optional[float], subaccount: str
     ) -> dict:
         """Backward-compatible shim kept for older call sites."""
-        # pylint: disable=too-many-arguments,too-many-positional-arguments
+        # pylint: disable=too-many-arguments
         req = OrderRequest(
             symbol=symbol,
             side=side,

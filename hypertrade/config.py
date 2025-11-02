@@ -69,64 +69,64 @@ class Settings(BaseSettings):
 
     @field_validator("master_addr", "subaccount_addr")
     @classmethod
-    def _not_blank(cls, v: str) -> str:
-        if not v or not v.strip():
+    def _not_blank(cls, value: str) -> str:
+        if not value or not value.strip():
             raise ValueError("must be set and non-empty")
-        return v
+        return value
 
     @field_validator("api_wallet_priv")
     @classmethod
-    def _secret_not_blank(cls, v: SecretStr) -> SecretStr:
-        if not v or not v.get_secret_value().strip():
+    def _secret_not_blank(cls, secret: SecretStr) -> SecretStr:
+        if not secret or not secret.get_secret_value().strip():
             raise ValueError("must be set and non-empty")
-        return v
+        return secret
 
     @field_validator("tv_webhook_ips", mode="before")
     @classmethod
-    def _parse_ip_list(cls, v):
+    def _parse_ip_list(cls, value):
         # Accept list, JSON string, or comma-separated string
-        if v is None:
-            return v
-        if isinstance(v, list):
-            return v
-        if isinstance(v, str):
-            s = v.strip()
-            if s.startswith("[") and s.endswith("]"):
+        if value is None:
+            return value
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("[") and text.endswith("]"):
                 try:
-                    parsed = json.loads(s)
+                    parsed = json.loads(text)
                     if isinstance(parsed, list):
                         return [str(x).strip() for x in parsed]
                 except (ValueError, TypeError, json.JSONDecodeError):
                     pass
             # fallback: comma-separated
-            return [part.strip() for part in s.split(",") if part.strip()]
-        return v
+            return [part.strip() for part in text.split(",") if part.strip()]
+        return value
 
     @field_validator("log_level")
     @classmethod
-    def _normalize_level(cls, v: str) -> str:
-        level = (v or "").strip().upper()
+    def _normalize_level(cls, value: str) -> str:
+        level = (value or "").strip().upper()
         valid = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
         return level if level in valid else "INFO"
 
     @field_validator("rate_limit_only_paths", "rate_limit_exclude_paths", mode="before")
     @classmethod
-    def _parse_path_list(cls, v):
-        if v is None:
-            return v
-        if isinstance(v, list):
-            return v
-        if isinstance(v, str):
-            s = v.strip()
-            if s.startswith("[") and s.endswith("]"):
+    def _parse_path_list(cls, value):
+        if value is None:
+            return value
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("[") and text.endswith("]"):
                 try:
-                    parsed = json.loads(s)
+                    parsed = json.loads(text)
                     if isinstance(parsed, list):
                         return [str(x).strip() for x in parsed]
                 except (ValueError, TypeError, json.JSONDecodeError):
                     pass
-            return [part.strip() for part in s.split(",") if part.strip()]
-        return v
+            return [part.strip() for part in text.split(",") if part.strip()]
+        return value
 
 # Cached settings instance
 @lru_cache

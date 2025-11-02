@@ -27,13 +27,13 @@ def create_daemon() -> FastAPI:
     # Load settings and configure logging; provide clear error if env missing
     try:
         settings = get_settings()
-    except ValidationError as e:
+    except ValidationError as exc:
         msg = (
             "Missing required environment variables: "
             "HYPERTRADE_MASTER_ADDR, HYPERTRADE_API_WALLET_PRIV, HYPERTRADE_SUBACCOUNT_ADDR. "
             "Export them in your shell or set them in .env."
         )
-        raise RuntimeError(msg) from e
+        raise RuntimeError(msg) from exc
 
     setup_logging(
         settings.log_level,

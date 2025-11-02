@@ -16,12 +16,12 @@ try:  # pragma: no cover - import shape differs across environments
         from telebot.apihelper import ApiTelegramException  # type: ignore
     except (ImportError, AttributeError):
         class ApiTelegramException(Exception):  # type: ignore
-            pass
+            """Fallback when telebot.apihelper.ApiTelegramException is unavailable."""
 except ImportError:  # library might be unavailable in CI
     TeleBot = None  # type: ignore
 
     class ApiTelegramException(Exception):  # type: ignore
-        pass
+        """Fallback when telebot is not installed in the environment."""
 
 
 def send_telegram_message(token: str, chat_id: str, text: str) -> bool:

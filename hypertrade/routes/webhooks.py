@@ -54,10 +54,10 @@ def _validate_schema(raw: dict) -> None:
     """Validate payload against TradingView JSON schema; raise 422 with detail on error."""
     try:
         jsonschema_validate(instance=raw, schema=TRADINGVIEW_SCHEMA)
-    except JSONSchemaValidationError as e:
-        path = ".".join([str(p) for p in e.path])
-        detail = f"JSON schema validation error at '{path or '$'}': {e.message}"
-        raise HTTPException(status_code=422, detail=detail)
+    except JSONSchemaValidationError as exc:
+        path = ".".join([str(p) for p in exc.path])
+        detail = f"JSON schema validation error at '{path or '$'}': {exc.message}"
+        raise HTTPException(status_code=422, detail=detail) from exc
 
 def _build_response(
     payload: TradingViewWebhook, *, signal: SignalType, side: Side, symbol: str
@@ -83,39 +83,36 @@ def _format_telegram_message(
     side: Side,
     req_id: Optional[str],
 ) -> str:
-    # Prefer original precision from payload where possible
-    contracts_text = str(payload.order.contracts)
-    price_text = (
-        str(payload.order.price) if payload.order.price is not None else "market"
-    )
-    leverage = payload.general.leverage or "-"
-    strategy = payload.general.strategy or "-"
-    exchange = payload.general.exchange
-    interval = payload.general.interval
-    prev_pos = payload.market.previous_position
-    prev_sz = str(payload.market.previous_position_size)
-    cur_pos = payload.market.position
-    cur_sz = str(payload.market.position_size)
-    order_id = payload.order.id
-    comment = payload.order.comment or "-"
-    t_time = payload.general.time.isoformat()
-    t_now = payload.general.timenow.isoformat()
+    """Format a concise Telegram message for the webhook event.
 
+    Keep locals to a minimum to satisfy lint rules and reduce noise.
+    """
+    price_text = str(payload.order.price) if payload.order.price is not None else "market"
     lines = [
         "HyperTrade Webhook",
-        f"Symbol: {symbol} @ {exchange}",
-        f"Signal: {signal.value} | Side: {side.value} | Leverage: {leverage}",
+        f"Symbol: {symbol} @ {payload.general.exchange}",
+        (
+            f"Signal: {signal.value} | Side: {side.value} | Leverage: "
+            f"{payload.general.leverage or '-'}"
+        ),
         (
             "Order: action="
-            f"{payload.order.action} id={order_id} "
-            f"contracts={contracts_text} price={price_text}"
+            f"{payload.order.action} id={payload.order.id} "
+            f"contracts={payload.order.contracts} price={price_text}"
         ),
-        f"Position: {prev_pos}({prev_sz}) -> {cur_pos}({cur_sz})",
-        f"Strategy: {strategy} | Interval: {interval}",
-        f"Times: time={t_time} now={t_now}",
+        (
+            "Position: "
+            f"{payload.market.previous_position}({payload.market.previous_position_size}) -> "
+            f"{payload.market.position}({payload.market.position_size})"
+        ),
+        f"Strategy: {payload.general.strategy or '-'} | Interval: {payload.general.interval}",
+        (
+            "Times: "
+            f"time={payload.general.time.isoformat()} now={payload.general.timenow.isoformat()}"
+        ),
     ]
-    if comment and comment != "-":
-        lines.append(f"Comment: {comment}")
+    if payload.order.comment:
+        lines.append(f"Comment: {payload.order.comment}")
     if req_id:
         lines.append(f"ReqID: {req_id}")
     return "\n".join(lines)
