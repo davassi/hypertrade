@@ -98,14 +98,12 @@ class HyperliquidService:
         sz_decimals = int(meta.get("szDecimals", 3))
         size = round(request.qty, sz_decimals)
         
-        print(f"\nCalculated order size: {size} {symbol} ({usage_pct}% of available)")
-
         if size <= 0:
             print("Size too small or zero → nothing to trade.")
             return
             
         print(f"\n→ POSITION {size} {symbol} (impact + IOC – guaranteed fill)")
-        long_res = client.market_order(
+        long_res = self.client.market_order(
             symbol=symbol,
             side=request.side,
             size=request.qty,

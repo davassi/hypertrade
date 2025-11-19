@@ -19,6 +19,8 @@ from ..security import require_ip_whitelisted
 
 from ..routes.tradingview_enums import SignalType, PositionType, OrderAction, Side
 
+from .hyperliquid_service import OrderRequest
+
 router = APIRouter(tags=["webhooks"])
 log = logging.getLogger("uvicorn.error")
 
@@ -60,7 +62,7 @@ async def hypertrade_webhook(
             "order_id": payload.order.id,
         })
     
-    symbol = payload.general.ticker.upper()
+    symbol = payload.currency.base.upper()
     try:
         contracts = float(payload.order.contracts)
         price = float(payload.order.price)    
@@ -99,18 +101,26 @@ async def hypertrade_webhook(
     )
     
     # Execute plugging into Hyperliquid SDK
-    #try:
-    #     result = client.place_order(
-    #         symbol=symbol,
-    #         side=side,
-    #         qty=contracts,
-    #         price=price,
-    #         subaccount=subaccount,
-    #     )
-    ##except Exception as e:
-    #    log.exception("Order placement failed")
-    #    raise HTTPException(status_code=502, detail=f"Order placement failed: {e}")
+    order_request = OrderRequest(
+        symbol=symbol,
+        side=side,
+        qty=((contracts)),
+        price=((price)),
+        reduce_only=False,
+        post_only=False,
+        client_id=None,
+        leverage=payload.general.leverage,
+        subaccount=vault_address or None,
+    )
+    
+    try:
+        result = client.place_order(order_request)
+    except Exception as e:
+        log.exception("Order placement failed")
+        raise HTTPException(status_code=502, detail=f"Order placement failed: {e}")
 
+    log.info("Order placed successfully: %s", result)
+    
     # Finally: build a response
     response = _build_response(payload, signal=signal, side=side, symbol=symbol)
 
