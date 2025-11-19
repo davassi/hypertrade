@@ -9,12 +9,18 @@ from typing import Optional
 
 from .tradingview_enums import Side
 
-logger = logging.getLogger("uvicorn.error")
+from hyperliquid.exchange import Exchange
+from hyperliquid.info import Info
+from hyperliquid.utils import constants
 
+from hyperliquid_data_client import HyperliquidDataClient
+from hyperliquid_execution_client import HyperliquidExecutionClient, PositionSide, OrderStatus
+
+logger = logging.getLogger("uvicorn.error")
 
 @dataclass
 class OrderRequest:
-    """Parameters for placing an order on Hyperliquid."""
+    """Request parameters for placing an order on Hyperliquid."""
     # pylint: disable=too-many-instance-attributes
     symbol: str
     side: Side
@@ -26,10 +32,9 @@ class OrderRequest:
     leverage: Optional[int] = None
     subaccount: Optional[str] = None
 
-
 @dataclass
 class OrderResult:
-    """Normalized order result returned to API clients."""
+    """Response result returned from API clients."""
     # pylint: disable=too-many-instance-attributes
     status: str
     order_id: str
@@ -41,12 +46,10 @@ class OrderResult:
     post_only: bool
     client_id: Optional[str]
 
-
 class HyperliquidError(Exception):
     """Raised for client-level errors or unimplemented operations."""
 
-
-class HyperliquidClient:
+class HyperliquidService:
     """Thin wrapper around Hyperliquid SDK/API.
 
     Currently operates in mock mode by default. Replace the internals of
@@ -57,90 +60,87 @@ class HyperliquidClient:
         self,
         *,
         base_url: Optional[str] = None,
-        mock: bool = True,
         master_addr: Optional[str] = None,
         api_wallet_priv: Optional[str] = None,
         subaccount_addr: Optional[str] = None,
     ):
         # pylint: disable=too-many-arguments
         self.base_url = base_url or os.getenv("HL_BASE_URL", "https://api.hyperliquid.xyz")
-        self.mock = mock
-        self.master_addr = master_addr
-        self.api_wallet_priv = api_wallet_priv
-        self.subaccount_addr = subaccount_addr
-
-    @classmethod
-    def from_settings(cls, settings, *, mock: bool = True) -> "HyperliquidClient":
-        """Construct a client from app settings."""
-        priv = (
-            settings.api_wallet_priv.get_secret_value()
-            if getattr(settings, "api_wallet_priv", None)
-            else None
+        
+        self.info = Info(self.base_url, skip_ws=True)
+        self.user_state = self.info.user_state(self.master_addr)
+        self.spot_user_state = info.spot_user_state(self.master_addr)
+        self.exchange = Exchange(self.base_url, self.master_addr, self.api_wallet_priv, skip_ws=True)
+        
+        self.client = HyperliquidExecutionClient(
+            private_key=api_wallet_priv,
+            account_address=master_addr,
+            vault_address=subaccount_addr,
+            base_url=self.base_url,
+            default_premium_bps=5.0,
         )
-        return cls(
-            mock=mock,
-            master_addr=getattr(settings, "master_addr", None),
-            api_wallet_priv=priv,
-            subaccount_addr=getattr(settings, "subaccount_addr", None),
-        )
-
-    def place_order(self, req: OrderRequest) -> dict:
+    
+    def place_order(self, request: OrderRequest) -> dict:
         """Validate and place an order (mocked unless `mock=False`)."""
+        
         # Basic validation/normalization
-        if req.qty is None or Decimal(req.qty) <= 0:
-            raise HyperliquidError("qty must be > 0")
-        symbol = (req.symbol or "").upper()
-        if not symbol:
-            raise HyperliquidError("symbol required")
+        if request.qty is None or Decimal(request.qty) <= 0:
+            raise HyperliquidError("Quantity must be > 0")
+          
+        if not request.symbol:
+            raise HyperliquidError("Symbol required")
+        
+        symbol = request.symbol.upper()
+        
+        # ===================================================================
+        # Fresh data right before trading
+        # ===================================================================
+        mid_price = (self.client.data.get_mid(symbol))
+        mark_price = (self.client.data.get_mark(symbol))
+        
+        meta = self.client.data.get_meta(symbol)
+        available = self.client.data.get_available_balance()
 
-        return self._send_order(req)
+        print(f"\n{symbol} Mid: {mid_price:.6f} | Mark: {mark_price:.6f}")
+        print(f"Available balance: {available:.2f} USDC")
+        print(f"Max leverage: {meta.get('maxLeverage', 'N/A')}x | Size decimals: {meta.get('szDecimals')}")
 
-    # Backward compatible shim (deprecated)
-    def place_order_simple(
-        self, symbol: str, side: Side, qty: float, price: Optional[float], *, subaccount: str
-    ) -> dict:
-        """Backward-compatible shim kept for older call sites."""
-        # pylint: disable=too-many-arguments
-        req = OrderRequest(
+        # ===================================================================
+        # Safe position sizing (85% of available, never 100%)
+        # ===================================================================
+        usage_pct = 85
+        raw_size = available * usage_pct / 100 / mid_price
+
+        # Round to asset's size decimals (critical!)
+        sz_decimals = int(meta.get("szDecimals", 3))
+        size = round(raw_size, sz_decimals)
+        
+        print(f"\nCalculated order size: {size} {symbol} ({usage_pct}% of available)")
+
+        if size <= 0:
+            print("Size too small or zero → nothing to trade.")
+            return
+            
+        print(f"\n→ POSITION {size} {symbol} (impact + IOC – guaranteed fill)")
+        long_res = client.market_order(
             symbol=symbol,
-            side=side,
-            qty=Decimal(str(qty)),
-            price=Decimal(str(price)) if price is not None else None,
-            subaccount=subaccount,
+            side=request.side,
+            size=request.qty,
+            premium_bps=80,   # 0.8% extra aggression – adjust 50–200 bps as needed
         )
-        return self.place_order(req)
-
-    def _send_order(self, req: OrderRequest) -> dict:
-        """Internal send; mocked unless real SDK wiring is added."""
-        if self.mock:
-            # Simulate success
-            oid = f"mock-{int(time.time()*1000)}"
-            logger.info(
-                (
-                    "[MOCK] place_order: symbol=%s side=%s qty=%s price=%s "
-                    "reduceOnly=%s postOnly=%s sub=%s"
-                ),
-                req.symbol,
-                req.side.value,
-                str(req.qty),
-                str(req.price) if req.price is not None else None,
-                req.reduce_only,
-                req.post_only,
-                req.subaccount or self.subaccount_addr,
-            )
-            result = OrderResult(
-                status="ok",
-                order_id=oid,
-                symbol=req.symbol,
-                side=req.side.value,
-                qty=str(req.qty),
-                price=str(req.price) if req.price is not None else None,
-                reduce_only=req.reduce_only,
-                post_only=req.post_only,
-                client_id=req.client_id,
-            )
-            return asdict(result)
-
+        # Safe printing – handle both filled and error cases
+        if long_res is None:
+            print("   LONG Position creation did not work.")
+            raise HyperliquidError("Order Creation did not work")
+        else:
+            status = long_res["response"]["data"]["statuses"][0]
+            if "filled" in status:
+                print(f"   Long filled: {status['filled']['totalSz']} @ {status['filled']['avgPx']}")
+            else:
+                print("   Long result:", status)
+                
+        return long_res
+        
         # Real implementation placeholder; integrate official SDK here
         # Example (pseudocode):
         # client = OfficialHLClient(priv_key=self.api_wallet_priv, master=self.master_addr)
@@ -155,4 +155,4 @@ class HyperliquidClient:
         #     subaccount=req.subaccount or self.subaccount_addr,
         # )
         # return resp
-        raise HyperliquidError("Real Hyperliquid SDK integration not implemented")
+        

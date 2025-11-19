@@ -23,117 +23,12 @@ router = APIRouter(tags=["webhooks"])
 
 log = logging.getLogger("uvicorn.error")
 
-async def _log_invalid_json_body(request: Request) -> None:
-    """Log the full request body when JSON parsing fails, with req_id."""
-    try:
-        body_bytes = await request.body()
-        body_text = body_bytes.decode("utf-8", errors="replace")
-    except (RuntimeError, UnicodeDecodeError):
-        body_text = "<unreadable>"
-    req_id = getattr(request.state, "request_id", None)
-    log.warning("Invalid JSON body req_id=%s body=%s", req_id, body_text)
-
-def _require_json_content_type(request: Request) -> None:
-    """Ensure the request has application/json content type or raise 415."""
-    ctype = request.headers.get("content-type", "").lower()
-    if "application/json" not in ctype:
-        raise HTTPException(
-            status_code=415,
-            detail="Unsupported Media Type: application/json required",
-        )
-
-async def _read_json_body(request: Request) -> dict:
-    """Read and parse JSON body; log full body on failure and raise 422."""
-    try:
-        return await request.json()
-    except (ValueError, TypeError, UnicodeDecodeError) as exc:
-        await _log_invalid_json_body(request)
-        raise HTTPException(status_code=422, detail="Invalid JSON body") from exc
-
-def _validate_schema(raw: dict) -> None:
-    """Validate payload against TradingView JSON schema; raise 422 with detail on error."""
-    try:
-        jsonschema_validate(instance=raw, schema=TRADINGVIEW_SCHEMA)
-    except JSONSchemaValidationError as exc:
-        path = ".".join([str(p) for p in exc.path])
-        detail = f"JSON schema validation error at '{path or '$'}': {exc.message}"
-        raise HTTPException(status_code=422, detail=detail) from exc
-
-def _build_response(
-    payload: TradingViewWebhook, *, signal: SignalType, side: Side, symbol: str
-) -> dict:
-    return {
-        "status": "ok",
-        "signal": signal.value,
-        "side": side.value,
-        "symbol": symbol,
-        "ticker": payload.general.ticker,
-        "exchange": payload.general.exchange,
-        "action": payload.order.action,
-        "contracts": str(payload.order.contracts),
-        "price": str(payload.order.price),
-        "received_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-def _format_telegram_message(
-    *,
-    payload: TradingViewWebhook,
-    symbol: str,
-    signal: SignalType,
-    side: Side,
-    req_id: Optional[str],
-) -> str:
-    """Format a concise Telegram message for the webhook event.
-
-    Keep locals to a minimum to satisfy lint rules and reduce noise.
-    """
-    price_text = str(payload.order.price) if payload.order.price is not None else "market"
-    lines = [
-        "HyperTrade Webhook",
-        f"Symbol: {symbol} @ {payload.general.exchange}",
-        (
-            f"Signal: {signal.value} | Side: {side.value} | Leverage: "
-            f"{payload.general.leverage or '-'}"
-        ),
-        (
-            "Order: action="
-            f"{payload.order.action} id={payload.order.id} "
-            f"contracts={payload.order.contracts} price={price_text}"
-        ),
-        (
-            "Position: "
-            f"{payload.market.previous_position}({payload.market.previous_position_size}) -> "
-            f"{payload.market.position}({payload.market.position_size})"
-        ),
-        f"Strategy: {payload.general.strategy or '-'} | Interval: {payload.general.interval}",
-        (
-            "Times: "
-            f"time={payload.general.time.isoformat()} now={payload.general.timenow.isoformat()}"
-        ),
-    ]
-    if payload.order.comment:
-        lines.append(f"Comment: {payload.order.comment}")
-    if req_id:
-        lines.append(f"ReqID: {req_id}")
-    return "\n".join(lines)
-
-def _parse_contracts_and_price(
-    payload: TradingViewWebhook,
-) -> Tuple[float, Optional[float]]:
-    """Parse numeric fields from payload with proper error handling."""
-    try:
-        contracts = float(payload.order.contracts)
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid 'contracts' value") from exc
-    price = float(payload.order.price) if payload.order.price else None
-    return contracts, price
-
 @router.post(
     "/webhook",
     dependencies=[Depends(require_ip_whitelisted(None))],
     summary="TradingView webhook",
 )
-async def tradingview_webhook(
+async def hypertrade_webhook(
     request: Request, background_tasks: BackgroundTasks
 ) -> dict:
     """Main webhook endpoint: validates, parses, logs, and returns a summary."""
@@ -156,7 +51,7 @@ async def tradingview_webhook(
     payload = TradingViewWebhook.model_validate(raw)
 
     # Now log a summary of the webhook payload
-    log.info("Received TradingView webhook")
+    log.info("Received a Webhook payload")
     log.info(
         (
             "\x1b[31mTradingView webhook: [%s %s %s] -> ACTION %s@%s "
@@ -193,18 +88,26 @@ async def tradingview_webhook(
             {"status": "no_action", "signal": signal.value, "order_id": payload.order.id}
         )
 
+    print(f"\nCalculated order size: {size} {symbol} ({usage_pct}% of available)")
+
+    if size <= 0:
+        print("Size too small or zero → nothing to trade.")
+        return
+    
+    hservice = hyperliquid_service()
+    
     # Execute plugging into Hyperliquid SDK
-    # try:
-    #     result = client.place_order(
-    #         symbol=symbol,
-    #         side=side,
-    #         qty=contracts,
-    #         price=price,
-    #         subaccount=subaccount,
-    #     )
-    #except Exception as e:
-    #    log.exception("Order placement failed")
-    #    raise HTTPException(status_code=502, detail=f"Order placement failed: {e}")
+    try:
+         result = client.place_order(
+             symbol=symbol,
+             side=side,
+             qty=contracts,
+             price=price,
+             subaccount=subaccount,
+         )
+    except Exception as e:
+        log.exception("Order placement failed")
+        raise HTTPException(status_code=502, detail=f"Order placement failed: {e}")
 
     # Finally: build a response
     response = _build_response(payload, signal=signal, side=side, symbol=symbol)
@@ -325,3 +228,109 @@ def parse_signal(payload: TradingViewWebhook) -> SignalType:
         return SignalType.REVERSE_TO_SHORT
 
     return SignalType.NO_ACTION
+
+
+async def _log_invalid_json_body(request: Request) -> None:
+    """Log the full request body when JSON parsing fails, with req_id."""
+    try:
+        body_bytes = await request.body()
+        body_text = body_bytes.decode("utf-8", errors="replace")
+    except (RuntimeError, UnicodeDecodeError):
+        body_text = "<unreadable>"
+    req_id = getattr(request.state, "request_id", None)
+    log.warning("Invalid JSON body req_id=%s body=%s", req_id, body_text)
+
+def _require_json_content_type(request: Request) -> None:
+    """Ensure the request has application/json content type or raise 415."""
+    ctype = request.headers.get("content-type", "").lower()
+    if "application/json" not in ctype:
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported Media Type: application/json required",
+        )
+
+async def _read_json_body(request: Request) -> dict:
+    """Read and parse JSON body; log full body on failure and raise 422."""
+    try:
+        return await request.json()
+    except (ValueError, TypeError, UnicodeDecodeError) as exc:
+        await _log_invalid_json_body(request)
+        raise HTTPException(status_code=422, detail="Invalid JSON body") from exc
+
+def _validate_schema(raw: dict) -> None:
+    """Validate payload against TradingView JSON schema; raise 422 with detail on error."""
+    try:
+        jsonschema_validate(instance=raw, schema=TRADINGVIEW_SCHEMA)
+    except JSONSchemaValidationError as exc:
+        path = ".".join([str(p) for p in exc.path])
+        detail = f"JSON schema validation error at '{path or '$'}': {exc.message}"
+        raise HTTPException(status_code=422, detail=detail) from exc
+
+def _build_response(
+    payload: TradingViewWebhook, *, signal: SignalType, side: Side, symbol: str
+) -> dict:
+    return {
+        "status": "ok",
+        "signal": signal.value,
+        "side": side.value,
+        "symbol": symbol,
+        "ticker": payload.general.ticker,
+        "exchange": payload.general.exchange,
+        "action": payload.order.action,
+        "contracts": str(payload.order.contracts),
+        "price": str(payload.order.price),
+        "received_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+def _format_telegram_message(
+    *,
+    payload: TradingViewWebhook,
+    symbol: str,
+    signal: SignalType,
+    side: Side,
+    req_id: Optional[str],
+) -> str:
+    """Format a concise Telegram message for the webhook event.
+
+    Keep locals to a minimum to satisfy lint rules and reduce noise.
+    """
+    price_text = str(payload.order.price) if payload.order.price is not None else "market"
+    lines = [
+        "HyperTrade Webhook",
+        f"Symbol: {symbol} @ {payload.general.exchange}",
+        (
+            f"Signal: {signal.value} | Side: {side.value} | Leverage: "
+            f"{payload.general.leverage or '-'}"
+        ),
+        (
+            "Order: action="
+            f"{payload.order.action} id={payload.order.id} "
+            f"contracts={payload.order.contracts} price={price_text}"
+        ),
+        (
+            "Position: "
+            f"{payload.market.previous_position}({payload.market.previous_position_size}) -> "
+            f"{payload.market.position}({payload.market.position_size})"
+        ),
+        f"Strategy: {payload.general.strategy or '-'} | Interval: {payload.general.interval}",
+        (
+            "Times: "
+            f"time={payload.general.time.isoformat()} now={payload.general.timenow.isoformat()}"
+        ),
+    ]
+    if payload.order.comment:
+        lines.append(f"Comment: {payload.order.comment}")
+    if req_id:
+        lines.append(f"ReqID: {req_id}")
+    return "\n".join(lines)
+
+def _parse_contracts_and_price(
+    payload: TradingViewWebhook,
+) -> Tuple[float, Optional[float]]:
+    """Parse numeric fields from payload with proper error handling."""
+    try:
+        contracts = float(payload.order.contracts)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid 'contracts' value") from exc
+    price = float(payload.order.price) if payload.order.price else None
+    return contracts, price
