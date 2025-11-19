@@ -141,18 +141,5 @@ class HyperliquidService:
                 
         return long_res
         
-        # Real implementation placeholder; integrate official SDK here
-        # Example (pseudocode):
-        # client = OfficialHLClient(priv_key=self.api_wallet_priv, master=self.master_addr)
-        # resp = client.order(
-        #     symbol=req.symbol,
-        #     side=req.side.value,
-        #     size=str(req.qty),
-        #     price=str(req.price) if req.price else None,
-        #     reduceOnly=req.reduce_only,
-        #     postOnly=req.post_only,
-        #     clientId=req.client_id,
-        #     subaccount=req.subaccount or self.subaccount_addr,
-        # )
-        # return resp
+ 
         
