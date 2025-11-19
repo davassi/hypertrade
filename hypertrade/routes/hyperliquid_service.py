@@ -1,20 +1,13 @@
 """Lightweight Hyperliquid client abstraction used by webhook processing."""
 
 import os
-import time
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
 
 from .tradingview_enums import Side
-
-from hyperliquid.exchange import Exchange
-from hyperliquid.info import Info
-from hyperliquid.utils import constants
-
-from hyperliquid_data_client import HyperliquidDataClient
-from hyperliquid_execution_client import HyperliquidExecutionClient, PositionSide, OrderStatus
+from .hyperliquid_execution_client import HyperliquidExecutionClient, PositionSide
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -64,14 +57,7 @@ class HyperliquidService:
         api_wallet_priv: Optional[str] = None,
         subaccount_addr: Optional[str] = None,
     ):
-        # pylint: disable=too-many-arguments
-        self.base_url = base_url or os.getenv("HL_BASE_URL", "https://api.hyperliquid.xyz")
-        
-        self.info = Info(self.base_url, skip_ws=True)
-        self.user_state = self.info.user_state(self.master_addr)
-        self.spot_user_state = info.spot_user_state(self.master_addr)
-        self.exchange = Exchange(self.base_url, self.master_addr, self.api_wallet_priv, skip_ws=True)
-        
+        self.base_url = base_url or os.getenv("HL_BASE_URL", "https://api.hyperliquid.xyz") 
         self.client = HyperliquidExecutionClient(
             private_key=api_wallet_priv,
             account_address=master_addr,
@@ -106,14 +92,11 @@ class HyperliquidService:
         print(f"Max leverage: {meta.get('maxLeverage', 'N/A')}x | Size decimals: {meta.get('szDecimals')}")
 
         # ===================================================================
-        # Safe position sizing (85% of available, never 100%)
+        # Safe position sizing (Set up max around 85% of available, never 100%)
         # ===================================================================
-        usage_pct = 85
-        raw_size = available * usage_pct / 100 / mid_price
-
         # Round to asset's size decimals (critical!)
         sz_decimals = int(meta.get("szDecimals", 3))
-        size = round(raw_size, sz_decimals)
+        size = round(request.qty, sz_decimals)
         
         print(f"\nCalculated order size: {size} {symbol} ({usage_pct}% of available)")
 

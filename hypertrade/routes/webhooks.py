@@ -20,94 +20,96 @@ from ..security import require_ip_whitelisted
 from ..routes.tradingview_enums import SignalType, PositionType, OrderAction, Side
 
 router = APIRouter(tags=["webhooks"])
-
 log = logging.getLogger("uvicorn.error")
 
 @router.post(
     "/webhook",
     dependencies=[Depends(require_ip_whitelisted(None))],
-    summary="TradingView webhook",
+    summary="TradingView → Hyperliquid",
 )
 async def hypertrade_webhook(
-    request: Request, background_tasks: BackgroundTasks
+    request: Request, 
+    background_tasks: BackgroundTasks
 ) -> dict:
     """Main webhook endpoint: validates, parses, logs, and returns a summary."""
+    
     # Let's start with our checks.
 
     # First: Require JSON content type
     _require_json_content_type(request)
-
     # Second: Parse JSON body ourselves to avoid pre-validation errors on non-JSON content
     raw = await _read_json_body(request)
-
     # Third: JSON Schema validation on raw payload
     _validate_schema(raw)
-
     # Fourth (Optional but recommended) secret enforcement: if env secret is set,
-    # then the payload requires to carry a matching general.secret
+    # then the json payload requires to carry a matching general.secret
     secret_enforcement(request, raw)
 
-    # Pydantic parsing for strong typing and coercion
     payload = TradingViewWebhook.model_validate(raw)
 
-    # Now log a summary of the webhook payload
-    log.info("Received a Webhook payload")
-    log.info(
-        (
-            "\x1b[31mTradingView webhook: [%s %s %s] -> ACTION %s@%s "
-            "contracts=%s ['%s'] alert='%s'\x1b[0m"
-        ),
-        payload.general.exchange,
-        payload.general.ticker,
-        payload.general.interval,
-        payload.order.action,
-        payload.order.price,
-        payload.order.contracts,
-        payload.general.time,
-        payload.order.alert_message if payload.order.alert_message else "None",
-    )
-    log.debug("Full webhook payload: %s", raw)
-
-    # Fifth: processing logic here (TODO: would be good to enqueue the job)
-    signal = parse_signal(payload)
-    log.info("Parsed signal: %s", signal.value)
-    symbol = payload.general.ticker.upper()
-    log.info("TradingView ticker mapped to symbol: %s", symbol)
-
-    _parse_contracts_and_price(payload)
-
-    side = signal_to_side(signal)
-
-    if side is None or signal == SignalType.NO_ACTION:
-        log.info(
-            "No actionable signal. signal=%s payload_id=%s",
-            signal.value,
-            payload.order.id,
-        )
-        return JSONResponse(
-            {"status": "no_action", "signal": signal.value, "order_id": payload.order.id}
-        )
-
-    print(f"\nCalculated order size: {size} {symbol} ({usage_pct}% of available)")
-
-    if size <= 0:
-        print("Size too small or zero → nothing to trade.")
-        return
+    log.info("Full webhook payload: %s", raw)
     
-    hservice = hyperliquid_service()
+    signal = parse_signal(payload)
+    side = signal_to_side(signal)
+    
+    if not side or signal == SignalType.NO_ACTION:
+        return JSONResponse({
+            "status": "ignored",
+            "reason": "no_action",
+            "signal": signal.value,
+            "order_id": payload.order.id,
+        })
+    
+    symbol = payload.general.ticker.upper()
+    try:
+        contracts = float(payload.order.contracts)
+        price = float(payload.order.price)    
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid 'contracts' or 'price' value") from exc
+        
+    # Fifth: processing logic here (TODO: would be good to enqueue the job)
+    nominal_quantity = float(contracts * price) 
+    
+    log.info(
+        "[%s] %s (%s) [price='%.2f',size='%s',qty='%.2f' USDC] %s",
+        payload.order.action.upper() == "BUY" and "LONG" or "SHORT",
+        payload.general.ticker.upper(),
+        payload.general.interval,
+        price,
+        contracts,
+        nominal_quantity,
+        payload.order.alert_message or "",
+    )
+    from .hyperliquid_service import HyperliquidService
+    
+    # ===================================================================
+    # Config & Clients
+    # ===================================================================
+    private_key = require_env("PRIVATE_KEY")
+    account_address = require_env("HYPERTRADE_MASTER_ADDR")
+
+    vault_address: Optional[str] = os.getenv("VAULT_ADDRESS") or None
+    api_url = os.getenv("HYPERLIQUID_API_URL", "https://api.hyperliquid.xyz")
+    
+    client = HyperliquidService(
+        base_url=api_url,
+        master_addr=account_address,
+        api_wallet_priv=private_key,
+        subaccount_addr=vault_address,
+    )
     
     # Execute plugging into Hyperliquid SDK
-    try:
-         result = client.place_order(
-             symbol=symbol,
-             side=side,
-             qty=contracts,
-             price=price,
-             subaccount=subaccount,
-         )
-    except Exception as e:
-        log.exception("Order placement failed")
-        raise HTTPException(status_code=502, detail=f"Order placement failed: {e}")
+    #try:
+    #     result = client.place_order(
+    #         symbol=symbol,
+    #         side=side,
+    #         qty=contracts,
+    #         price=price,
+    #         subaccount=subaccount,
+    #     )
+    ##except Exception as e:
+    #    log.exception("Order placement failed")
+    #    raise HTTPException(status_code=502, detail=f"Order placement failed: {e}")
 
     # Finally: build a response
     response = _build_response(payload, signal=signal, side=side, symbol=symbol)
@@ -324,13 +326,12 @@ def _format_telegram_message(
         lines.append(f"ReqID: {req_id}")
     return "\n".join(lines)
 
-def _parse_contracts_and_price(
-    payload: TradingViewWebhook,
-) -> Tuple[float, Optional[float]]:
-    """Parse numeric fields from payload with proper error handling."""
-    try:
-        contracts = float(payload.order.contracts)
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid 'contracts' value") from exc
-    price = float(payload.order.price) if payload.order.price else None
-    return contracts, price
+import os
+
+def require_env(var_name: str) -> str:
+    """Raise an exception if env var missing."""
+    value = os.getenv(var_name)
+    if not value:
+        print(f"ERROR: Missing required environment variable: {var_name}", file=sys.stderr)
+        raise ValueError(var_name + " must be provided")
+    return value

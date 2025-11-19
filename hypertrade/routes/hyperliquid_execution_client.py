@@ -8,7 +8,7 @@ from typing import Literal, Any, Dict, Optional, Tuple
 
 from eth_account import Account
 from hyperliquid.exchange import Exchange
-from hyperliquid_data_client import HyperliquidDataClient
+from .hyperliquid_data_client import HyperliquidDataClient
 
 TIF = Literal["Gtc", "Ioc", "Alo"]
 
@@ -43,6 +43,9 @@ class HyperliquidExecutionClient:
         base_url: str = "https://api.hyperliquid.xyz",
         default_premium_bps: float = 5.0,
     ):
+        if not private_key:
+            raise ValueError("private_key must be provided")
+        
         pk = private_key if private_key.startswith("0x") else f"0x{private_key}"
         wallet = Account.from_key(pk)
 
@@ -228,4 +231,3 @@ class HyperliquidExecutionClient:
         rounding = ROUND_CEILING if is_buy else ROUND_FLOOR
         normalized = d.quantize(tick, rounding=rounding)
         return float(normalized)
-
