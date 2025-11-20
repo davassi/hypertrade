@@ -17,6 +17,45 @@ from .exception_handlers import register_exception_handlers
 
 log = logging.getLogger("uvicorn.error")
 
+import sys
+
+def die_gracefully() -> None:
+    """
+    Validate required secrets at import time.
+    If missing → print a gorgeous, helpful error and exit immediately.
+    Safe to call multiple times (idempotent).
+    """
+    banner = (
+        "\n"
+        "╔" + "═" * 72 + "╗\n"
+        "║  ⚠️   HYPERTRADE DAEMON CANNOT START – MISSING SECRETS   ⚠️              ║\n"
+        "╚" + "═" * 72 + "╝\n"
+        "\n"
+        "Required environment variables are not set:\n"
+        "\n"
+        "    • HYPERTRADE_MASTER_ADDR      → your Hyperliquid master address\n"
+        "    • HYPERTRADE_API_WALLET_PRIV  → 64-char hex private key (with or without 0x)\n"
+        "    • HYPERTRADE_SUBACCOUNT_ADDR  → your sub-account address\n"
+        "\n"
+        "Fix it by one of these methods:\n"
+        "\n"
+        "1. Create a .env file in project root:\n"
+        "       HYPERTRADE_MASTER_ADDR=addr1q...\n"
+        "       HYPERTRADE_API_WALLET_PRIV=0123456789abcdef...\n"
+        "       HYPERTRADE_SUBACCOUNT_ADDR=addr1q...\n"
+        "\n"
+        "2. Export in your shell:\n"
+        "       export HYPERTRADE_MASTER_ADDR=addr1q...\n"
+        "       export HYPERTRADE_API_WALLET_PRIV=...\n"
+        "       export HYPERTRADE_SUBACCOUNT_ADDR=addr1q...\n"
+        "\n"
+        "The daemon will start automatically once these are set.\n"
+    )
+
+    print(banner, file=sys.stderr, flush=True)
+    log.critical("Hypertrade startup aborted: missing required secrets")
+    sys.exit(1)
+
 
 def create_daemon() -> FastAPI:
     """Create and configure the FastAPI app."""
@@ -27,17 +66,8 @@ def create_daemon() -> FastAPI:
     # Load settings and configure logging; provide clear error if env missing
     try:
         settings = get_settings()
-    except ValidationError as exc:
-        msg = (
-            "Missing required environment variables: "
-            "HYPERTRADE_MASTER_ADDR, HYPERTRADE_API_WALLET_PRIV, HYPERTRADE_SUBACCOUNT_ADDR. "
-            "Export them in your shell or set them in .env."
-        )
-        raise RuntimeError(msg) from exc
-    
-    print("--------"*100)
-    print("Settings loaded:", settings)
-    print("--------"*100)
+    except ValidationError:
+        die_gracefully()
     
     setup_logging(
         settings.log_level,
