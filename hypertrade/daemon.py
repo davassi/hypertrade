@@ -21,9 +21,7 @@ import sys
 
 def die_gracefully() -> None:
     """
-    Validate required secrets at import time.
-    If missing → print a gorgeous, helpful error and exit immediately.
-    Safe to call multiple times (idempotent).
+    Just print a gorgeous, helpful error and exit immediately.
     """
     banner = (
         "\n"

@@ -8,6 +8,11 @@ from uvicorn.config import LOGGING_CONFIG
 
 from .version import __version__
 
+import logging
+from typing import Iterable, Optional
+
+# Use uvicorn.error logger (guaranteed to exist + colored in dev)
+logger = logging.getLogger("uvicorn.error")
 
 # pylint: disable=too-few-public-methods
 class _MessageFilter(pylog.Filter):
@@ -60,37 +65,53 @@ def log_startup_banner(
     *,
     host: Optional[str] = None,
     port: Optional[int] = None,
-    whitelist_enabled: bool,
-    whitelist_ips: Iterable[str],
-    trust_xff: bool,
+    whitelist_enabled: bool = False,
+    whitelist_ips: Iterable[str] = (),
+    trust_xff: bool = True,
+    version: str = "1.0.0",  # pass __version__ or from importlib.metadata
 ) -> None:
-    """Log a startup banner with ASCII 'HYPERTRADE' and key settings."""
-    logger = pylog.getLogger("uvicorn.error")
-    listening = (
-        f"http://{host}:{port}"
-        if host is not None and port is not None
-        else "uvicorn-configured address"
-    )
-    ascii_art = (
-        "\n".join(
-            [
-                "#   # #   # ####  ##### ####  ##### ####   ###  ####  #####",
-                "#   #  # #  #   # #     #   #   #   #   # #   # #   # #    ",
-                "#####   #   ####  ####  ####    #   ####  ##### #   # #### ",
-                "#   #   #   #     #     #  #    #   #  #  #   # #   # #    ",
-                "#   #   #   #     ##### #   #   #   #   # #   # ####  #####",
-            ]
-        )
-    )
-    details = (
-        f"Hypertrade Webhook Daemon v{__version__}\n"
-        f"Listening: {listening}\n"
-        f"Whitelist: {'ON' if whitelist_enabled else 'OFF'} ({len(list(whitelist_ips))} IPs)\n"
-        f"Trust XFF: {'ON' if trust_xff else 'OFF'}"
-    )
-    ruler = "=" * 59
-    banner = f"{ruler}\n{ascii_art}\n{ruler}\n{details}\n{ruler}"
-    for line in banner.splitlines():
+    """
+    Log a gorgeous, colorful startup banner with Hypertrade ASCII art.
+    Uses uvicorn.error logger → automatically colored in dev, clean in prod.
+    """
+    # Resolve listening URL
+    if host and port:
+        url = f"http://{host}:{port}"
+    elif host:
+        url = f"http://{host}"
+    else:
+        url = "uvicorn default"
+
+    # Count unique IPs safely
+    ip_count = len(set(str(ip) for ip in whitelist_ips if ip))
+
+    # Hypertrade ASCII art (compact + readable)
+    art = [
+        "██╗  ██╗██╗   ██╗██████╗ ███████╗██████╗ ████████╗██████╗  █████╗ ██████╗ ███████╗\n",
+        "██║  ██║╚██╗ ██╔╝██╔══██╗██╔══██╗██╔══██╗╚══██╔══╝██╔══██╗██╔══██╗██╔══██╗██╔════╝\n",
+        "███████║ ╚████╔╝ ██████╔╝█████╔╝ ██████╔╝   ██║   ██████╔╝███████║██║  ██║█████╗  \n",
+        "██╔══██║  ╚██╔╝  ██╔═══╝ ██╔══╝  ██╔══██╗   ██║   ██╔══██╗██╔══██║██║  ██║██╔══╝  \n",
+        "██║  ██║   ██║   ██║     ███████╗██║  ██║   ██║   ██║  ██║██║  ██║██████╔╝███████╗\n",
+        "╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ ╚══════╝\n",
+    ]
+
+    ruler = "═" * 88
+
+    banner = f"""
+{ruler}
+{"".join(art)}
+{ruler}
+        Hypertrade Webhook Daemon v{version}
+        
+        Listening → {url}
+        IP Whitelist → {'ENABLED' if whitelist_enabled else 'disabled'} ({ip_count} IP{'s' if ip_count != 1 else ''})
+        Trust X-Forwarded-For → {'YES' if trust_xff else 'NO'}
+        
+        Ready for TradingView webhooks!
+{ruler}
+    """
+
+    for line in banner.strip().splitlines():
         logger.info(line)
 
 
