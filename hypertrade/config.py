@@ -10,20 +10,28 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Runtime settings loaded from env/.env with validation."""
 
-    # App defaults
+    # ── Core ─────────────────────────────────────
     app_name: str = "Hypertrade Daemon"
     environment: str = "local"
+    
+    model_config = SettingsConfigDict(
+        env_prefix="HYPERTRADE_",
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+        validate_default=False,
+    )
 
-    # Required secrets (must be present in env)
+    # ── REQUIRED SECRETS (will crash on import if missing) ─────────────────────
     master_addr: str
     api_wallet_priv: SecretStr
     subaccount_addr: str
 
-    # Optional IP whitelist controls
+    # ── Security & Networking ─────────────────────────────────────────────────
     ip_whitelist_enabled: bool = False
     trust_forwarded_for: bool = True
 
-    # tv_webhook_ips are hardcoded defaults, can be overridden in env
+    # tv_webhook_ips are hardcoded by default, can be overridden in env
     tv_webhook_ips: List[str] = [
         "52.89.214.238",
         "34.212.75.30",
@@ -61,13 +69,7 @@ class Settings(BaseSettings):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
 
-    # Settings config
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="HYPERTRADE_",
-        case_sensitive=False,
-    )
-
+    # ── Validators ────────────────────────────────────────────────────────────
     @field_validator("master_addr", "subaccount_addr")
     @classmethod
     def _not_blank(cls, value: str) -> str:
@@ -89,7 +91,12 @@ class Settings(BaseSettings):
         valid = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
         return level if level in valid else "INFO"
 
-    @field_validator("tv_webhook_ips", "rate_limit_only_paths", "rate_limit_exclude_paths", mode="before")
+    @field_validator(
+        "tv_webhook_ips", 
+        "rate_limit_only_paths", 
+        "rate_limit_exclude_paths", 
+        "trusted_hosts",
+        mode="before")
     @classmethod
     def _parse_path_list(cls, value):
         if value is None or isinstance(value, list):
@@ -107,7 +114,13 @@ class Settings(BaseSettings):
         return value
 
 # Cached settings instance
-@lru_cache
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return a cached Settings instance (validates env on first call)."""
-    return Settings()
+    settings = Settings()                                 # reads env
+    try:
+        # This line FORCES validation of ALL required fields right now
+        settings = settings.model_copy(update=settings.model_dump())
+    except ValidationError:
+        raise
+    return settings

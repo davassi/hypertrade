@@ -34,7 +34,11 @@ def create_daemon() -> FastAPI:
             "Export them in your shell or set them in .env."
         )
         raise RuntimeError(msg) from exc
-
+    
+    print("--------"*100)
+    print("Settings loaded:", settings)
+    print("--------"*100)
+    
     setup_logging(
         settings.log_level,
         suppress_access=settings.suppress_access_logs,
