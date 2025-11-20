@@ -31,8 +31,9 @@ class Settings(BaseSettings):
         "52.32.178.7",
     ]
 
-    # Logging
+    # Logging level
     log_level: str = "INFO"
+    
     # Reduce noisy logs from random scanners
     suppress_access_logs: bool = False
     suppress_404_logs: bool = True
@@ -81,27 +82,6 @@ class Settings(BaseSettings):
             raise ValueError("must be set and non-empty")
         return secret
 
-    @field_validator("tv_webhook_ips", mode="before")
-    @classmethod
-    def _parse_ip_list(cls, value):
-        # Accept list, JSON string, or comma-separated string
-        if value is None:
-            return value
-        if isinstance(value, list):
-            return value
-        if isinstance(value, str):
-            text = value.strip()
-            if text.startswith("[") and text.endswith("]"):
-                try:
-                    parsed = json.loads(text)
-                    if isinstance(parsed, list):
-                        return [str(x).strip() for x in parsed]
-                except (ValueError, TypeError, json.JSONDecodeError):
-                    pass
-            # fallback: comma-separated
-            return [part.strip() for part in text.split(",") if part.strip()]
-        return value
-
     @field_validator("log_level")
     @classmethod
     def _normalize_level(cls, value: str) -> str:
@@ -109,12 +89,10 @@ class Settings(BaseSettings):
         valid = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
         return level if level in valid else "INFO"
 
-    @field_validator("rate_limit_only_paths", "rate_limit_exclude_paths", mode="before")
+    @field_validator("tv_webhook_ips", "rate_limit_only_paths", "rate_limit_exclude_paths", mode="before")
     @classmethod
     def _parse_path_list(cls, value):
-        if value is None:
-            return value
-        if isinstance(value, list):
+        if value is None or isinstance(value, list):
             return value
         if isinstance(value, str):
             text = value.strip()
@@ -123,7 +101,7 @@ class Settings(BaseSettings):
                     parsed = json.loads(text)
                     if isinstance(parsed, list):
                         return [str(x).strip() for x in parsed]
-                except (ValueError, TypeError, json.JSONDecodeError):
+                except (json.JSONDecodeError):
                     pass
             return [part.strip() for part in text.split(",") if part.strip()]
         return value
