@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+import logging
 from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING, InvalidOperation
 from enum import Enum
 from typing import Literal, Any, Dict, Optional, Tuple
@@ -9,6 +10,8 @@ from typing import Literal, Any, Dict, Optional, Tuple
 from eth_account import Account
 from hyperliquid.exchange import Exchange
 from .hyperliquid_data_client import HyperliquidDataClient
+
+logger = logging.getLogger("uvicorn.error")
 
 TIF = Literal["Gtc", "Ioc", "Alo"]
 
@@ -58,7 +61,11 @@ class HyperliquidExecutionClient:
         self.data = HyperliquidDataClient(account_address=account_address, base_url=base_url)
         self.default_premium_bps = float(os.environ.get("PREMIUM_BPS", default_premium_bps))
 
-        print(f"Initialized HyperliquidExecutionClient | Wallet: {wallet.address} | Vault: {vault_address or 'None'}")
+        logger.debug(
+            "Initialized HyperliquidExecutionClient | Wallet: %s | Vault: %s",
+            wallet.address,
+            vault_address or "None",
+        )
 
     # ===================================================================
     # Public: High-level order placement
