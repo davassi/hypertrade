@@ -20,9 +20,7 @@ log = logging.getLogger("uvicorn.error")
 import sys
 
 def die_gracefully() -> None:
-    """
-    Just print a gorgeous, helpful error and exit immediately.
-    """
+
     banner = (
         "\n"
         "╔" + "═" * 72 + "╗\n"
@@ -34,19 +32,8 @@ def die_gracefully() -> None:
         "    • HYPERTRADE_MASTER_ADDR      → your Hyperliquid master address\n"
         "    • HYPERTRADE_API_WALLET_PRIV  → 64-char hex private key (with or without 0x)\n"
         "    • HYPERTRADE_SUBACCOUNT_ADDR  → your sub-account address\n"
-        "\n"
-        "Fix it by one of these methods:\n"
-        "\n"
-        "1. Create a .env file in project root:\n"
-        "       HYPERTRADE_MASTER_ADDR=addr1q...\n"
-        "       HYPERTRADE_API_WALLET_PRIV=0123456789abcdef...\n"
-        "       HYPERTRADE_SUBACCOUNT_ADDR=addr1q...\n"
-        "\n"
-        "2. Export in your shell:\n"
-        "       export HYPERTRADE_MASTER_ADDR=addr1q...\n"
-        "       export HYPERTRADE_API_WALLET_PRIV=...\n"
-        "       export HYPERTRADE_SUBACCOUNT_ADDR=addr1q...\n"
-        "\n"
+        "\n\n"
+
         "The daemon will start automatically once these are set.\n"
     )
 
