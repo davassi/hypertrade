@@ -9,7 +9,7 @@ from typing import Optional
 from .tradingview_enums import Side
 from .hyperliquid_execution_client import HyperliquidExecutionClient, PositionSide
 
-logger = logging.getLogger("uvicorn.error")
+log = logging.getLogger("uvicorn.error")
 
 @dataclass
 class OrderRequest:
@@ -87,9 +87,13 @@ class HyperliquidService:
         meta = self.client.data.get_meta(symbol)
         available = self.client.data.get_available_balance()
 
-        print(f"\n{symbol} Mid: {mid_price:.6f} | Mark: {mark_price:.6f}")
-        print(f"Available balance: {available:.2f} USDC")
-        print(f"Max leverage: {meta.get('maxLeverage', 'N/A')}x | Size decimals: {meta.get('szDecimals')}")
+        log.info("%s Mid: %.6f | Mark: %.6f", symbol, mid_price, mark_price)
+        log.info("Available balance: %.2f USDC", available)
+        log.info(
+            "Max leverage: %sx | Size decimals: %s",
+            meta.get("maxLeverage", "N/A"),
+            meta.get("szDecimals"),
+        )
 
         # ===================================================================
         # Safe position sizing (Set up max around 85% of available, never 100%)
@@ -99,10 +103,10 @@ class HyperliquidService:
         size = round(request.qty, sz_decimals)
         
         if size <= 0:
-            print("Size too small or zero → nothing to trade.")
+            log.info("Size too small or zero → nothing to trade.")
             return
             
-        print(f"\n→ POSITION {size} {symbol} (impact + IOC – guaranteed fill)")
+        log.info("→ POSITION %s %s (impact + IOC – guaranteed fill)", size, symbol)
         long_res = self.client.market_order(
             symbol=symbol,
             side=request.side,
@@ -111,14 +115,18 @@ class HyperliquidService:
         )
         # Safe printing – handle both filled and error cases
         if long_res is None:
-            print("   LONG Position creation did not work.")
+            log.info("   LONG Position creation did not work.")
             raise HyperliquidError("Order Creation did not work")
         else:
             status = long_res["response"]["data"]["statuses"][0]
             if "filled" in status:
-                print(f"   Long filled: {status['filled']['totalSz']} @ {status['filled']['avgPx']}")
+                log.info(
+                    "   Long filled: %s @ %s",
+                    status["filled"]["totalSz"],
+                    status["filled"]["avgPx"],
+                )
             else:
-                print("   Long result:", status)
+                log.info("   Long result: %s", status)
                 
         return long_res
         

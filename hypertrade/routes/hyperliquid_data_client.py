@@ -8,7 +8,7 @@ from typing import Any, Dict, Tuple, Optional
 
 import requests
 
-logger = logging.getLogger("uvicorn.error")
+log = logging.getLogger("uvicorn.error")
 
 class HyperliquidDataClient:
     """
@@ -24,7 +24,7 @@ class HyperliquidDataClient:
         self.info_url = base_url.rstrip("/") + "/info"
         self.account_address = account_address or os.environ.get("HYPERTRADE_MASTER_ADDR")
 
-        logger.debug("HyperliquidDataClient initialized | Base URL: %s", self.info_url)
+        log.debug("HyperliquidDataClient initialized | Base URL: %s", self.info_url)
 
     # ===================================================================
     # Public API

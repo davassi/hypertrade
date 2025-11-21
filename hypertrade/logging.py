@@ -12,7 +12,7 @@ import logging
 from typing import Iterable, Optional
 
 # Use uvicorn.error logger (guaranteed to exist + colored in dev)
-logger = logging.getLogger("uvicorn.error")
+log = logging.getLogger("uvicorn.error")
 
 # pylint: disable=too-few-public-methods
 class _MessageFilter(pylog.Filter):
@@ -67,12 +67,12 @@ def log_startup_banner(
     """
 
     for line in banner.strip().splitlines():
-        logger.info(line)
+        log.info(line)
 
 
 def log_endpoints(app) -> None:
     """Log all registered APIRoute endpoints."""
-    logger = pylog.getLogger("uvicorn.error")
+    log = pylog.getLogger("uvicorn.error")
     lines = []
     for route in getattr(app, "routes", []):
         if isinstance(route, APIRoute):
@@ -83,6 +83,6 @@ def log_endpoints(app) -> None:
             lines.append((route.path, method_str, route.name))
     lines.sort(key=lambda x: (x[0], x[1]))
     header = f"Available endpoints ({len(lines)}):"
-    logger.info("%s", header)
+    log.info("%s", header)
     for path, methods, name in lines:
-        logger.info("  %-7s %-40s (%s)", methods, path, name)
+        log.info("  %-7s %-40s (%s)", methods, path, name)

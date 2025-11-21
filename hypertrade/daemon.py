@@ -36,7 +36,7 @@ def die_gracefully() -> None:
         "The daemon will start automatically once these are set.\n"
     )
 
-    print(banner, file=sys.stderr, flush=True)
+    log.info(banner)
     log.critical("Hypertrade startup aborted: missing required secrets")
     sys.exit(1)
 

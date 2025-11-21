@@ -15,7 +15,7 @@ from ..security import _extract_client_ip
 class LoggingMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp):
         super().__init__(app)
-        self.logger = pylog.getLogger("uvicorn.error")
+        self.log = pylog.getLogger("uvicorn.error")
 
     def _log_request(
         self,
@@ -27,7 +27,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         client_ip: str,
         req_id: str,
     ) -> None:
-        self.logger.info(
+        self.log.info(
             "%s %s -> %s %dms ip=%s req_id=%s",
             method,
             route,

@@ -11,7 +11,7 @@ from eth_account import Account
 from hyperliquid.exchange import Exchange
 from .hyperliquid_data_client import HyperliquidDataClient
 
-logger = logging.getLogger("uvicorn.error")
+log = logging.getLogger("uvicorn.error")
 
 TIF = Literal["Gtc", "Ioc", "Alo"]
 
@@ -61,7 +61,7 @@ class HyperliquidExecutionClient:
         self.data = HyperliquidDataClient(account_address=account_address, base_url=base_url)
         self.default_premium_bps = float(os.environ.get("PREMIUM_BPS", default_premium_bps))
 
-        logger.debug(
+        log.debug(
             "Initialized HyperliquidExecutionClient | Wallet: %s | Vault: %s",
             wallet.address,
             vault_address or "None",
@@ -154,7 +154,7 @@ class HyperliquidExecutionClient:
         # Auto-retry on IOC failure
         if max_retries > 0:
             if self._was_ioc_rejected(res):
-                print(f"IOC close failed for {symbol}, retrying with 3x premium...")
+                log.info("IOC close failed for %s, retrying with 3x premium...", symbol)
                 time.sleep(2)
                 return self.close_position(
                     symbol=symbol,
@@ -178,10 +178,15 @@ class HyperliquidExecutionClient:
         One-liner: cancel a resting order OR reverse a filled one.
         """
         if status == OrderStatus.RESTING:
-            print(f"Cancelling resting order {oid} on {symbol}")
+            log.info("Cancelling resting order %s on %s", oid, symbol)
             return self.exchange.cancel(symbol, oid)
         elif status == OrderStatus.FILLED:
-            print(f"Reversing filled {position_side.value} position ({filled_size} {symbol})")
+            log.info(
+                "Reversing filled %s position (%s %s)",
+                position_side.value,
+                filled_size,
+                symbol,
+            )
             return self.close_position(symbol, position_side, filled_size)
         else:
             raise ValueError(f"Cannot handle order status: {status}")

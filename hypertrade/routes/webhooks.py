@@ -342,6 +342,6 @@ def require_env(var_name: str) -> str:
     """Raise an exception if env var missing."""
     value = os.getenv(var_name)
     if not value:
-        print(f"ERROR: Missing required environment variable: {var_name}", file=sys.stderr)
+        log.info("Missing required environment variable: %s", var_name)
         raise ValueError(var_name + " must be provided")
     return value
