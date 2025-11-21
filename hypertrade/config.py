@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     environment: str = "local"
     listen_host: str = "0.0.0.0"
     listen_port: int = 6487
-    
+
     model_config = SettingsConfigDict(
         env_prefix="HYPERTRADE_",
         env_file=".env",
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # Logging level
     log_level: str = "INFO"
-    
+
     # Reduce noisy logs from random scanners
     suppress_access_logs: bool = False
     suppress_404_logs: bool = True
@@ -94,9 +94,9 @@ class Settings(BaseSettings):
         return level if level in valid else "INFO"
 
     @field_validator(
-        "tv_webhook_ips", 
-        "rate_limit_only_paths", 
-        "rate_limit_exclude_paths", 
+        "tv_webhook_ips",
+        "rate_limit_only_paths",
+        "rate_limit_exclude_paths",
         "trusted_hosts",
         mode="before")
     @classmethod
@@ -110,7 +110,7 @@ class Settings(BaseSettings):
                     parsed = json.loads(text)
                     if isinstance(parsed, list):
                         return [str(x).strip() for x in parsed]
-                except (json.JSONDecodeError):
+                except json.JSONDecodeError:
                     pass
             return [part.strip() for part in text.split(",") if part.strip()]
         return value
@@ -119,10 +119,6 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return a cached Settings instance (validates env on first call)."""
-    settings = Settings()                                 # reads env
-    try:
-        # This line FORCES validation of ALL required fields right now
-        settings = settings.model_copy(update=settings.model_dump())
-    except ValidationError:
-        raise
-    return settings
+    settings = Settings()
+    # Force validation of all required fields immediately by copying.
+    return settings.model_copy(update=settings.model_dump())

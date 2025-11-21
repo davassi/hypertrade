@@ -1,5 +1,6 @@
 """ASGI app factory and configuration for the Hypertrade daemon."""
 
+import sys
 import logging
 from fastapi import FastAPI
 from pydantic import ValidationError
@@ -16,8 +17,6 @@ from .notify import send_telegram_message
 from .exception_handlers import register_exception_handlers
 
 log = logging.getLogger("uvicorn.error")
-
-import sys
 
 def die_gracefully() -> None:
 
