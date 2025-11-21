@@ -9,7 +9,6 @@ import logging
 
 log = logging.getLogger("uvicorn.error")
 
-# Defensive import: allow tests to inject a minimal `telebot` stub
 try:  # pragma: no cover - import shape differs across environments
     from telebot import TeleBot  # type: ignore
     try:  # In some tests a fake `telebot` object is injected without submodules

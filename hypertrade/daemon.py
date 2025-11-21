@@ -105,8 +105,8 @@ def create_daemon() -> FastAPI:
 
     # Showing our startup banner
     log_startup_banner(
-        host=None,
-        port=None,
+        host=settings.listen_host,
+        port=settings.listen_port,
         whitelist_enabled=settings.ip_whitelist_enabled,
         whitelist_ips=settings.tv_webhook_ips,
         trust_xff=settings.trust_forwarded_for,

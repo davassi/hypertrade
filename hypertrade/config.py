@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     # ── Core ─────────────────────────────────────
     app_name: str = "Hypertrade Daemon"
     environment: str = "local"
+    listen_host: str = "0.0.0.0"
+    listen_port: int = 6487
     
     model_config = SettingsConfigDict(
         env_prefix="HYPERTRADE_",
