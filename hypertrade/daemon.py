@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import get_settings
-from .logging import setup_logging, log_startup_banner, log_endpoints
+from .logging import log_startup_banner, log_endpoints
 from .middleware.logging import LoggingMiddleware
 from .middleware.content_limit import ContentLengthLimitMiddleware
 from .middleware.rate_limit import RateLimitMiddleware
@@ -53,12 +53,7 @@ def create_daemon() -> FastAPI:
         settings = get_settings()
     except ValidationError:
         die_gracefully()
-    
-    setup_logging(
-        settings.log_level,
-        suppress_access=settings.suppress_access_logs,
-        suppress_invalid_http_warnings=settings.suppress_invalid_http_warnings,
-    )
+
     app_.state.settings = settings
 
     # Pre-bind optional Telegram notifier to avoid per-request env access

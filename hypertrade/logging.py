@@ -27,40 +27,6 @@ class _MessageFilter(pylog.Filter):
                 return False
         return True
 
-
-def setup_logging(
-    level: str = "INFO",
-    *,
-    suppress_access: bool = False,
-    suppress_invalid_http_warnings: bool = True,
-) -> None:
-    """Configure logging to use Uvicorn's format when possible.
-
-    - If Uvicorn hasn't configured logging (e.g., running `python -m app`), apply
-      Uvicorn's default LOGGING_CONFIG so our logs match its format.
-    - Otherwise, only adjust levels so our loggers integrate with Uvicorn's handlers.
-    """
-    numeric = getattr(pylog, level, pylog.INFO)
-    root = pylog.getLogger()
-    if not root.handlers:
-        cfg = LOGGING_CONFIG.copy()
-        loggers_cfg = cfg.get("loggers", {})
-        if "uvicorn.error" in loggers_cfg:
-            loggers_cfg["uvicorn.error"]["level"] = level
-        if "uvicorn.access" in loggers_cfg:
-            loggers_cfg["uvicorn.access"]["level"] = (
-                "WARNING" if suppress_access else level
-            )
-        logging_config.dictConfig(cfg)
-
-    pylog.getLogger("uvicorn").setLevel(numeric)
-    err_logger = pylog.getLogger("uvicorn.error")
-    err_logger.setLevel(numeric)
-    if suppress_invalid_http_warnings:
-        err_logger.addFilter(_MessageFilter(deny_contains=["Invalid HTTP request received."]))
-    pylog.getLogger("uvicorn.access").setLevel(pylog.WARNING if suppress_access else numeric)
-
-
 def log_startup_banner(
     *,
     host: Optional[str] = None,
@@ -70,19 +36,8 @@ def log_startup_banner(
     trust_xff: bool = True,
     version: str = "1.0.0",  # pass __version__ or from importlib.metadata
 ) -> None:
-    """
-    Log a gorgeous, colorful startup banner with Hypertrade ASCII art.
-    Uses uvicorn.error logger → automatically colored in dev, clean in prod.
-    """
-    # Resolve listening URL
-    if host and port:
-        url = f"http://{host}:{port}"
-    elif host:
-        url = f"http://{host}"
-    else:
-        url = "uvicorn default"
-
-    # Count unique IPs safely
+   
+    url = f"http://{host}:{port}"
     ip_count = len(set(str(ip) for ip in whitelist_ips if ip))
 
     # Hypertrade ASCII art (compact + readable)
