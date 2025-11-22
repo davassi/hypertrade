@@ -200,10 +200,12 @@ class HyperliquidExecutionClient:
         try:
             statuses = res["response"]["data"]["statuses"]
             for s in statuses:
-                if "resting" in s:
-                    return int(s["resting"]["oid"]), OrderStatus.RESTING
-                if "filled" in s:
-                    return int(s["filled"]["oid"]), OrderStatus.FILLED
+                if OrderStatus.RESTING.value in s:
+                    rest = s[OrderStatus.RESTING.value]
+                    return int(rest["oid"]), OrderStatus.RESTING
+                if OrderStatus.FILLED.value in s:
+                    filled = s[OrderStatus.FILLED.value]
+                    return int(filled["oid"]), OrderStatus.FILLED
             # Fallback: check for error
             if statuses and "error" in statuses[0]:
                 raise ValueError(statuses[0]["error"])
