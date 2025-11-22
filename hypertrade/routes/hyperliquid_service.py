@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Optional
 
 from .tradingview_enums import Side
-from .hyperliquid_execution_client import HyperliquidExecutionClient, PositionSide
+from .hyperliquid_execution_client import HyperliquidExecutionClient
 
 log = logging.getLogger("uvicorn.error")
 

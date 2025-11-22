@@ -13,11 +13,15 @@ from ..security import _extract_client_ip
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
+    """Middleware to log incoming requests with timing and request IDs."""
+    
     def __init__(self, app: ASGIApp):
         super().__init__(app)
         self.log = pylog.getLogger("uvicorn.error")
 
     async def dispatch(self, request: Request, call_next):
+        """Process the incoming request, log details, and attach request ID headers."""
+        
         start = time.perf_counter()
         req_id = str(uuid.uuid4())
         settings = get_settings()
@@ -40,6 +44,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             duration_ms = int((time.perf_counter() - start) * 1000)
             status = response.status_code if response else 500
             route = getattr(request.scope.get("route"), "path", path)
+            
             # Optionally suppress noisy 404s (random scans to unknown paths)
             if not (
                 settings.suppress_404_logs

@@ -1,18 +1,17 @@
 """Logging utilities: configure Uvicorn-compatible logs and startup banner."""
 
 import logging as pylog
-import logging.config as logging_config
 from typing import Iterable, Optional, List
-from fastapi.routing import APIRoute
-from uvicorn.config import LOGGING_CONFIG
+
+try:  # FastAPI might not be installed in lint-only environments
+    from fastapi.routing import APIRoute
+except ImportError:  # pragma: no cover
+    APIRoute = None  # type: ignore[assignment]
 
 from .version import __version__
 
-import logging
-from typing import Iterable, Optional
-
 # Use uvicorn.error logger (guaranteed to exist + colored in dev)
-log = logging.getLogger("uvicorn.error")
+log = pylog.getLogger("uvicorn.error")
 
 # pylint: disable=too-few-public-methods
 class _MessageFilter(pylog.Filter):
@@ -27,6 +26,7 @@ class _MessageFilter(pylog.Filter):
                 return False
         return True
 
+# pylint: disable=too-many-arguments
 def log_startup_banner(
     *,
     host: Optional[str] = None,
@@ -36,7 +36,7 @@ def log_startup_banner(
     trust_xff: bool = True,
     version: str = "1.0.0",  # pass __version__ or from importlib.metadata
 ) -> None:
-   
+    """Log the startup banner with configuration details."""   
     url = f"http://{host}:{port}"
     ip_count = len(set(str(ip) for ip in whitelist_ips if ip))
 
@@ -72,7 +72,10 @@ def log_startup_banner(
 
 def log_endpoints(app) -> None:
     """Log all registered APIRoute endpoints."""
-    log = pylog.getLogger("uvicorn.error")
+    if APIRoute is None:
+        log.info("FastAPI not available; skipping endpoint log.")
+        return
+
     lines = []
     for route in getattr(app, "routes", []):
         if isinstance(route, APIRoute):
@@ -81,8 +84,10 @@ def log_endpoints(app) -> None:
             )
             method_str = ",".join(methods) or "-"
             lines.append((route.path, method_str, route.name))
+    
     lines.sort(key=lambda x: (x[0], x[1]))
     header = f"Available endpoints ({len(lines)}):"
+    
     log.info("%s", header)
     for path, methods, name in lines:
         log.info("  %-7s %-40s (%s)", methods, path, name)

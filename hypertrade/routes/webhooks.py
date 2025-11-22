@@ -19,7 +19,7 @@ from ..security import require_ip_whitelisted
 
 from ..routes.tradingview_enums import SignalType, PositionType, OrderAction, Side
 
-from .hyperliquid_service import OrderRequest
+from .hyperliquid_service import HyperliquidService, OrderRequest
 
 router = APIRouter(tags=["webhooks"])
 log = logging.getLogger("uvicorn.error")
@@ -39,10 +39,13 @@ async def hypertrade_webhook(
 
     # First: Require JSON content type
     _require_json_content_type(request)
+    
     # Second: Parse JSON body ourselves to avoid pre-validation errors on non-JSON content
     raw = await _read_json_body(request)
+    
     # Third: JSON Schema validation on raw payload
     _validate_schema(raw)
+    
     # Fourth (Optional but recommended) secret enforcement: if env secret is set,
     # then the json payload requires to carry a matching general.secret
     secret_enforcement(request, raw)
@@ -82,7 +85,6 @@ async def hypertrade_webhook(
         nominal_quantity,
         payload.order.alert_message or "",
     )
-    from .hyperliquid_service import HyperliquidService
     
     # ===================================================================
     # Config & Clients
@@ -117,7 +119,7 @@ async def hypertrade_webhook(
         result = client.place_order(order_request)
     except Exception as e:
         log.exception("Order placement failed")
-        raise HTTPException(status_code=502, detail=f"Order placement failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Order placement failed: {e}") from e
 
     log.info("Order placed successfully: %s", result)
     

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import time
 import logging
-from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING, InvalidOperation
+from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
 from enum import Enum
 from typing import Literal, Any, Dict, Optional, Tuple
 
@@ -16,10 +16,12 @@ log = logging.getLogger("uvicorn.error")
 TIF = Literal["Gtc", "Ioc", "Alo"]
 
 class OrderSide(Enum):
+    """Order side enumeration."""
     BUY = "buy"
     SELL = "sell"
 
 class PositionSide(Enum):
+    """Position side enumeration."""
     LONG = "long"
     SHORT = "short"
 
@@ -28,13 +30,14 @@ class PositionSide(Enum):
         return PositionSide.SHORT if self == PositionSide.LONG else PositionSide.LONG
 
 class OrderStatus(Enum):
+    """Order status enumeration."""
     RESTING = "resting"
     FILLED = "filled"
     UNKNOWN = "unknown"
 
 class HyperliquidExecutionClient:
     """
-    Clean, robust wrapper around Hyperliquid Exchange SDK.
+    Wrapper around Hyperliquid Exchange SDK.
     Designed for trading bots: fast market orders, safe limit orders, instant cancel-or-reverse.
     """
 
@@ -81,6 +84,7 @@ class HyperliquidExecutionClient:
         reduce_only: bool = False,
         cloid: Optional[str] = None,
     ) -> Tuple[int, OrderStatus]:
+        """Place a limit order and return (order_id, status)."""
         is_buy = side == PositionSide.LONG
         norm_price = self._normalize_price(symbol, price, is_buy=is_buy)
 
@@ -104,6 +108,7 @@ class HyperliquidExecutionClient:
         reduce_only: bool = False,
         cloid: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Place a market-like order using IOC with price impact premium."""
         premium = premium_bps or self.default_premium_bps
         is_buy = side == PositionSide.LONG
         aggressive_px = self._aggressive_price_from_impact(symbol, is_buy=is_buy, premium_bps=premium)
@@ -122,7 +127,6 @@ class HyperliquidExecutionClient:
     def market_close(
         self,
         symbol: str,
-        cloid: Optional[Cloid] = None,
     ) -> Dict[str, Any]:
         """Close entire position in one official call"""
         
@@ -210,15 +214,15 @@ class HyperliquidExecutionClient:
             if statuses and "error" in statuses[0]:
                 raise ValueError(statuses[0]["error"])
             raise ValueError("No resting/filled status found")
-        except Exception as e:
-            raise Exception(f"Failed to parse order response: {res}") from e
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Failed to parse order response: {res}") from exc
 
     @staticmethod
     def _was_ioc_rejected(res: Dict[str, Any]) -> bool:
         try:
             status = res["response"]["data"]["statuses"][0]
             return "error" in status and "could not immediately match" in status["error"]
-        except Exception:
+        except (KeyError, TypeError):
             return False
 
     def _aggressive_price_from_impact(self, symbol: str, is_buy: bool, premium_bps: float) -> float:
@@ -241,7 +245,7 @@ class HyperliquidExecutionClient:
             raise ValueError(f"Invalid price: {price}")
 
         tick = self._get_tick_size(symbol)
-        d = Decimal(str(price))
+        price_decimal = Decimal(str(price))
         rounding = ROUND_CEILING if is_buy else ROUND_FLOOR
-        normalized = d.quantize(tick, rounding=rounding)
+        normalized = price_decimal.quantize(tick, rounding=rounding)
         return float(normalized)
