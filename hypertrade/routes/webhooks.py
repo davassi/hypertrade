@@ -274,9 +274,7 @@ def _validate_schema(raw: dict) -> None:
     try:
         jsonschema_validate(instance=raw, schema=TRADINGVIEW_SCHEMA)
     except JSONSchemaValidationError as exc:
-        path = ".".join([str(p) for p in exc.path])
-        detail = f"JSON schema validation error at '{path or '$'}': {exc.message}"
-        raise HTTPException(status_code=422, detail=detail) from exc
+        raise HTTPException(status_code=422, detail="JSON schema validation error") from exc
 
 def _build_response(
     payload: TradingViewWebhook, *, signal: SignalType, side: Side, symbol: str
