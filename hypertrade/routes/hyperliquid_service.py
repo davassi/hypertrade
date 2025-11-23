@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Optional
 
 from .tradingview_enums import Side, SignalType
-from .hyperliquid_execution_client import HyperliquidExecutionClient
+from .hyperliquid_execution_client import HyperliquidExecutionClient, PositionSide
 
 log = logging.getLogger("uvicorn.error")
 
@@ -116,7 +116,7 @@ class HyperliquidService:
             log.info("   Opening/adding position.")    
             res = self.client.market_order(
                 symbol=symbol,
-                side=request.side,
+                side=_to_position_side(request.side),
                 size=size,
                 premium_bps=80,   # 0.8% extra aggression – adjust 50–200 bps as needed
             )
@@ -135,5 +135,11 @@ class HyperliquidService:
                 
         return res
         
- 
+def _to_position_side(side: Side) -> PositionSide:
+    """Convert TradingView Side enum (buy/sell) into Hyperliquid PositionSide."""
+    if side == Side.BUY:
+        return PositionSide.LONG
+    if side == Side.SELL:
+        return PositionSide.SHORT
+    raise HyperliquidError(f"Unsupported side: {side}")
         
