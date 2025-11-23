@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     subaccount_addr: str
 
     # ── Security & Networking ─────────────────────────────────────────────────
+    api_url : str = "https://api.hyperliquid.xyz"
     ip_whitelist_enabled: bool = False
     trust_forwarded_for: bool = True
 

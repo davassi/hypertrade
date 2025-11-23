@@ -19,7 +19,8 @@ from .exception_handlers import register_exception_handlers
 log = logging.getLogger("uvicorn.error")
 
 def die_gracefully() -> None:
-
+    """Log a clear error message and exit if required secrets are missing."""
+    
     banner = (
         "\n"
         "╔" + "═" * 72 + "╗\n"

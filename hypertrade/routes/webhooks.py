@@ -14,6 +14,7 @@ from jsonschema import (
     ValidationError as JSONSchemaValidationError,
 )
 
+from ..config import get_settings
 from ..schemas.tradingview_schema import TRADINGVIEW_SCHEMA
 from ..schemas.tradingview import TradingViewWebhook
 from ..security import require_ip_whitelisted
@@ -90,18 +91,16 @@ async def hypertrade_webhook(
     # ===================================================================
     # Config & Clients
     # ===================================================================
-    private_key = require_env("PRIVATE_KEY")
-    account_address = require_env("HYPERTRADE_MASTER_ADDR")
-
-    vault_address: Optional[str] = os.getenv("VAULT_ADDRESS") or None
-    api_url = os.getenv("HYPERLIQUID_API_URL", "https://api.hyperliquid.xyz")
+    settings = get_settings()
     
     client = HyperliquidService(
-        base_url=api_url,
-        master_addr=account_address,
-        api_wallet_priv=private_key,
-        subaccount_addr=vault_address,
+        base_url=settings.api_url,
+        master_addr=settings.master_addr,
+        api_wallet_priv=settings.api_wallet_priv.get_secret_value(),
+        subaccount_addr=None, # settings.subaccount_addr,
     )
+    
+    vault_address: Optional[str] = os.getenv("VAULT_ADDRESS") or None
     
     # Execute plugging into Hyperliquid SDK
     order_request = OrderRequest(
