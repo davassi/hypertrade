@@ -177,10 +177,6 @@ Don't forget to set up first the strategy name, the **"secret": "your-shared-sec
 }
 ```
 
-Notes:
-- Numeric fields are accepted as strings and parsed precisely as Decimals.
-- Timestamps (`time`, `timenow`) are parsed as ISO-8601 datetimes.
-
 Validation:
 - Incoming JSON is validated against a JSON Schema and then parsed into a Pydantic model.
 - Schema enforces required sections and basic constraints (action enum, date-time fields, numeric fields).
