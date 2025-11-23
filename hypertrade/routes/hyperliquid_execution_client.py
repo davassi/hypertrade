@@ -109,6 +109,7 @@ class HyperliquidExecutionClient:
         cloid: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Place a market-like order using IOC with price impact premium."""
+        
         premium = premium_bps or self.default_premium_bps
         is_buy = side == PositionSide.LONG
         aggressive_px = self._aggressive_price_from_impact(symbol, is_buy=is_buy, premium_bps=premium)

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
 
-from .tradingview_enums import Side
+from .tradingview_enums import Side, SignalType
 from .hyperliquid_execution_client import HyperliquidExecutionClient
 
 log = logging.getLogger("uvicorn.error")
@@ -17,6 +17,7 @@ class OrderRequest:
     # pylint: disable=too-many-instance-attributes
     symbol: str
     side: Side
+    signal: SignalType
     qty: Decimal
     price: Optional[Decimal] = None  # None -> market
     reduce_only: bool = False
@@ -67,7 +68,7 @@ class HyperliquidService:
         )
     
     def place_order(self, request: OrderRequest) -> dict:
-        """Validate and place an order (mocked unless `mock=False`)."""
+        """Validate and place an order."""
         
         # Basic validation/normalization
         if request.qty is None or Decimal(request.qty) <= 0:
@@ -106,29 +107,33 @@ class HyperliquidService:
             log.info("Size too small or zero → nothing to trade.")
             return
             
-        log.info("→ POSITION %s %s (impact + IOC – guaranteed fill)", size, symbol)
-        long_res = self.client.market_order(
-            symbol=symbol,
-            side=request.side,
-            size=request.qty,
-            premium_bps=80,   # 0.8% extra aggression – adjust 50–200 bps as needed
-        )
+        log.info("→ [%s POSITION] %s %s (impact + IOC – guaranteed fill)", request.side, size, symbol)
+        
+        if request.signal in {SignalType.CLOSE_LONG, SignalType.CLOSE_SHORT}:
+            log.info("   Closing position only.")
+            #res = self.client.close_position(symbol=symbol) TODO
+        else :
+            log.info("   Opening/adding position.")    
+            res = self.client.market_order(
+                symbol=symbol,
+                side=request.side,
+                size=size,
+                premium_bps=80,   # 0.8% extra aggression – adjust 50–200 bps as needed
+            )
+        
         # Safe printing – handle both filled and error cases
-        if long_res is None:
-            log.info("   LONG Position creation did not work.")
+        if res is None:
+            log.error("  Position creation did not work.")
             raise HyperliquidError("Order Creation did not work")
         else:
-            status = long_res["response"]["data"]["statuses"][0]
+            status = res["response"]["data"]["statuses"][0]
             if "filled" in status:
-                log.info(
-                    "   Long filled: %s @ %s",
-                    status["filled"]["totalSz"],
-                    status["filled"]["avgPx"],
-                )
+                st = status["filled"]
+                log.info("   Position filled: %s @ %s", st["totalSz"], st["avgPx"])
             else:
-                log.info("   Long result: %s", status)
+                log.info("   Position Order result: %s", status)
                 
-        return long_res
+        return res
         
  
         

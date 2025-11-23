@@ -39,25 +39,27 @@ async def hypertrade_webhook(
     
     # Let's start with our checks.
 
-    # First: Require JSON content type
+    # First: Require JSON content type.
     _require_json_content_type(request)
     
-    # Second: Parse JSON body ourselves to avoid pre-validation errors on non-JSON content
+    # Second: Parse JSON body ourselves to avoid pre-validation errors on non-JSON content.
     raw = await _read_json_body(request)
     
     # Third: JSON Schema validation on raw payload
     _validate_schema(raw)
     
     # Fourth (Optional but recommended) secret enforcement: if env secret is set,
-    # then the json payload requires to carry a matching general.secret
+    # then the json payload requires to carry a matching general.secret.
     secret_enforcement(request, raw)
 
     payload = TradingViewWebhook.model_validate(raw)
 
-    log.info("Full webhook payload: %s", raw)
+    log.debug("Full webhook payload: %s", raw)
     
     signal = parse_signal(payload)
+    print("\033[91mSIGNAL:", signal, "\033[0m")
     side = signal_to_side(signal)
+    print("\033[91mSIDE:", side, "\033[0m")
     
     if not side or signal == SignalType.NO_ACTION:
         return JSONResponse({
@@ -74,7 +76,7 @@ async def hypertrade_webhook(
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="Invalid 'contracts' or 'price' value") from exc
         
-    # Fifth: processing logic here (TODO: would be good to enqueue the job)
+    # Fifth: processing logic here (TODO: would be good to enqueue the job).
     nominal_quantity = float(contracts * price) 
     
     log.info(
@@ -89,7 +91,7 @@ async def hypertrade_webhook(
     )
     
     # ===================================================================
-    # Config & Clients
+    # Config & Clients.
     # ===================================================================
     settings = get_settings()
     
@@ -102,12 +104,13 @@ async def hypertrade_webhook(
     
     vault_address: Optional[str] = os.getenv("VAULT_ADDRESS") or None
     
-    # Execute plugging into Hyperliquid SDK
+    # Execute plugging into Hyperliquid SDK.
     order_request = OrderRequest(
         symbol=symbol,
         side=side,
-        qty=((contracts)),
-        price=((price)),
+        signal=signal,
+        qty=contracts,
+        price=price,
         reduce_only=False,
         post_only=False,
         client_id=None,
@@ -115,18 +118,24 @@ async def hypertrade_webhook(
         subaccount=vault_address or None,
     )
     
+    print("\033[91mOrder Request:", order_request, "\033[0m")
+    
+    # ===================================================================
+    # EXECUTION: Place the order.
+    # ===================================================================
+    
     try:
         result = client.place_order(order_request)
     except Exception as e:
         log.exception("Order placement failed")
         raise HTTPException(status_code=502, detail=f"Order placement failed: {e}") from e
 
-    log.info("Order placed successfully: %s", result)
+    log.info("Order placed result: %s", result)
     
-    # Finally: build a response
+    # Finally: build a response.
     response = _build_response(payload, signal=signal, side=side, symbol=symbol)
 
-    # Optional: shoot the response to Telegram if configured
+    # Optional: shoot the response to Telegram (if configured).
     notifier = getattr(request.app.state, "telegram_notify", None)
     if notifier:
         req_id = getattr(request.state, "request_id", None)
@@ -140,25 +149,6 @@ async def hypertrade_webhook(
         background_tasks.add_task(notifier, text)
 
     return response
-
-# Check the webhook secret if configured in environment
-def secret_enforcement(request: Request, raw: dict) -> None:
-    """Enforce optional shared secret in `general.secret`.
-
-    If `HYPERTRADE_WEBHOOK_SECRET` (via settings) is set, the request JSON must
-    contain a matching `general.secret`. Otherwise raise 401.
-    """
-    settings = request.app.state.settings
-    env_secret = None
-
-    if getattr(settings, "webhook_secret", None):
-        env_secret = settings.webhook_secret.get_secret_value()
-
-    if env_secret:
-        incoming = raw.get("general", {}).get("secret")
-        if not incoming or not hmac.compare_digest(str(incoming), str(env_secret)):
-            log.warning("Webhook rejected: invalid secret")
-            raise HTTPException(status_code=401, detail="Unauthorized: invalid webhook secret")
 
 # Enums and parsing logic
 def signal_to_side(signal: SignalType) -> Optional[Side]:
@@ -242,6 +232,26 @@ def parse_signal(payload: TradingViewWebhook) -> SignalType:
         return SignalType.REVERSE_TO_SHORT
 
     return SignalType.NO_ACTION
+
+
+# Check the webhook secret if configured in environment
+def secret_enforcement(request: Request, raw: dict) -> None:
+    """Enforce optional shared secret in `general.secret`.
+
+    If `HYPERTRADE_WEBHOOK_SECRET` (via settings) is set, the request JSON must
+    contain a matching `general.secret`. Otherwise raise 401.
+    """
+    settings = request.app.state.settings
+    env_secret = None
+
+    if getattr(settings, "webhook_secret", None):
+        env_secret = settings.webhook_secret.get_secret_value()
+
+    if env_secret:
+        incoming = raw.get("general", {}).get("secret")
+        if not incoming or not hmac.compare_digest(str(incoming), str(env_secret)):
+            log.warning("Webhook rejected: invalid secret")
+            raise HTTPException(status_code=401, detail="Unauthorized: invalid webhook secret")
 
 
 async def _log_invalid_json_body(request: Request) -> None:
