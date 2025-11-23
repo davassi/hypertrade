@@ -1,8 +1,8 @@
 [project]
-name = "hypertrade2-api"
+name = "hypertrade"
 version = "0.1.0"
-description = "FastAPI REST app scaffold with Uvicorn"
-authors = [{ name = "Your Name" }]
+description = "HyperTrade: A trading bot for HyperLiquid."
+authors = [{ name = "Davassi" }]
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -24,4 +24,9 @@ line-length = 100
 
 [tool.pytest.ini_options]
 addopts = "-q"
+asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = "."
+
+[tool.setuptools]
+packages = ["hypertrade", "app"]

@@ -1,10 +1,11 @@
 """TradingView webhook endpoint: validate, parse and respond."""
 
+import os
 import logging
 import hmac
 
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -335,8 +336,6 @@ def _format_telegram_message(
     if req_id:
         lines.append(f"ReqID: {req_id}")
     return "\n".join(lines)
-
-import os
 
 def require_env(var_name: str) -> str:
     """Raise an exception if env var missing."""

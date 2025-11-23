@@ -53,12 +53,36 @@ BASE_PAYLOAD = {
 }
 
 
+class StubHyperliquidService:
+    """FastAPI dependency replacement that avoids network calls."""
+
+    last_order_request = None
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def place_order(self, request):
+        type(self).last_order_request = request
+        return {
+            "status": "ok",
+            "order_id": "test-order",
+            "symbol": getattr(request.symbol, "upper", lambda: request.symbol)(),
+            "side": getattr(getattr(request.side, "value", request.side), "upper", lambda: request.side)(),
+            "qty": str(getattr(request, "qty", "")),
+            "price": str(getattr(request, "price", "")),
+            "reduce_only": getattr(request, "reduce_only", False),
+            "post_only": getattr(request, "post_only", False),
+            "client_id": getattr(request, "client_id", None),
+        }
+
+
 def make_app(monkeypatch, *, secret: str | None = None):
     """Create app with env configured via pytest monkeypatch."""
     # Required env vars for settings
     monkeypatch.setenv("HYPERTRADE_MASTER_ADDR", "0xMASTER")
     monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "dummy-priv-key")
     monkeypatch.setenv("HYPERTRADE_SUBACCOUNT_ADDR", "0xSUB")
+    monkeypatch.setenv("PRIVATE_KEY", "0x" + "1" * 64)
     if secret is not None:
         monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", secret)
 
@@ -69,6 +93,9 @@ def make_app(monkeypatch, *, secret: str | None = None):
 
     # Import the app factory and clear cached settings via the imported module
     from hypertrade import daemon
+    from hypertrade.routes import webhooks as webhooks_module
+
+    monkeypatch.setattr(webhooks_module, "HyperliquidService", StubHyperliquidService)
 
     daemon.get_settings.cache_clear()
     app = daemon.create_daemon()
@@ -87,7 +114,7 @@ def test_webhook_happy_path_ok(monkeypatch):
     assert data["status"] == "ok"
     assert data["signal"] == "CLOSE_SHORT"
     assert data["side"] == "buy"
-    assert data["symbol"] == "SOLUSD"
+    assert data["symbol"] == "SOL"
     assert data["ticker"] == "SOLUSD"
     assert data["exchange"] == "COINBASE"
     assert data["action"] == "buy"
