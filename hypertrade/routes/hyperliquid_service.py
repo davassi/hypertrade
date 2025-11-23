@@ -111,8 +111,13 @@ class HyperliquidService:
         
         if request.signal in {SignalType.CLOSE_LONG, SignalType.CLOSE_SHORT}:
             log.info("   Closing position only.")
-            #res = self.client.close_position(symbol=symbol) TODO
-        else :
+            res = self.client.close_position(
+                symbol=symbol,
+                side=_signal_to_position_side(request.signal),
+                size=size,
+                premium_bps=80,
+            )
+        else:
             log.info("   Opening/adding position.")    
             res = self.client.market_order(
                 symbol=symbol,
@@ -142,4 +147,12 @@ def _to_position_side(side: Side) -> PositionSide:
     if side == Side.SELL:
         return PositionSide.SHORT
     raise HyperliquidError(f"Unsupported side: {side}")
+
+def _signal_to_position_side(signal: SignalType) -> PositionSide:
+    """Map closing signals to the position side being flattened."""
+    if signal == SignalType.CLOSE_LONG:
+        return PositionSide.LONG
+    if signal == SignalType.CLOSE_SHORT:
+        return PositionSide.SHORT
+    raise HyperliquidError(f"Unsupported close signal: {signal}")
         
