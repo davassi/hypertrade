@@ -78,35 +78,37 @@ class HyperliquidService:
           
         if not request.symbol:
             raise HyperliquidError("Symbol required")
-        
+
         symbol = request.symbol.upper()
-        
+
         # ===================================================================
         # Fresh data right before trading
         # ===================================================================
         mid_price = (self.client.data.get_mid(symbol))
         mark_price = (self.client.data.get_mark(symbol))
-        
+
         meta = self.client.data.get_meta(symbol)
         available = self.client.data.get_available_balance()
 
+        max_leverage = meta.get("maxLeverage", 1)
+        sz_decimals = int(meta.get("szDecimals", 3))
+
         log.info("%s Mid: %.6f | Mark: %.6f", symbol, mid_price, mark_price)
         log.info("Available balance: %.2f USDC", available)
-        log.info(
-            "Max leverage: %sx | Size decimals: %s",
-            meta.get("maxLeverage", "N/A"),
-            meta.get("szDecimals"),
-        )
-        
+        log.info("Max leverage: %sx | Size decimals: %s", max_leverage, sz_decimals)
+
         # ===================================================================
         # Set the requested leverage
         # ===================================================================
         leverage = int(request.leverage or 1)
         log.info("Setting leverage for %s to %s x", symbol, leverage)
         
+        if leverage < 1 or leverage > max_leverage:
+            raise HyperliquidError(f"Requested leverage {leverage}x is out of bounds (1–{max_leverage}x)")
+
         # Update leverage first as shown in the SDK examples
         leverage_response = self.client.update_leverage(leverage, symbol)
-        
+
         if leverage_response.get('status') != 'ok':
             log.warning("Leverage setting may have failed: %s", {json.dumps(leverage_response, indent=2)})
         else:
@@ -116,12 +118,12 @@ class HyperliquidService:
         # Safe position sizing (Set up max around 85% of available, never 100%)
         # ===================================================================
         # Round to asset's size decimals (critical!)
-        sz_decimals = int(meta.get("szDecimals", 3)) 
+        
         size = round(request.qty * leverage, sz_decimals)
         
         if size <= 0:
             log.info("Size too small or zero → nothing to trade.")
-            return
+            raise HyperliquidError("Size too small or zero → nothing to trade.")
             
         log.info("→ [%s POSITION] Size: %s %s (impact + IOC – guaranteed fill)", request.side, size, symbol)
         
