@@ -198,6 +198,10 @@ class HyperliquidExecutionClient:
             return self.close_position(symbol, position_side, filled_size)
         else:
             raise ValueError(f"Cannot handle order status: {status}")
+        
+    def update_leverage(self, leverage: int, symbol: str) -> dict:
+        """Update leverage for a given symbol."""
+        return self.exchange.update_leverage(leverage, symbol)
 
     # ===================================================================
     # Internal helpers

@@ -2,6 +2,8 @@
 
 import os
 import logging
+import json
+
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
@@ -95,19 +97,33 @@ class HyperliquidService:
             meta.get("maxLeverage", "N/A"),
             meta.get("szDecimals"),
         )
+        
+        # ===================================================================
+        # Set the requested leverage
+        # ===================================================================
+        leverage = int(request.leverage or 1)
+        log.info("Setting leverage for %s to %s x", symbol, leverage)
+        
+        # Update leverage first as shown in the SDK examples
+        leverage_response = self.client.update_leverage(leverage, symbol)
+        
+        if leverage_response.get('status') != 'ok':
+            log.warning("Leverage setting may have failed: %s", {json.dumps(leverage_response, indent=2)})
+        else:
+            log.info("Updating leverage for %s to %sx", symbol, leverage)
 
         # ===================================================================
         # Safe position sizing (Set up max around 85% of available, never 100%)
         # ===================================================================
         # Round to asset's size decimals (critical!)
-        sz_decimals = int(meta.get("szDecimals", 3))
-        size = round(request.qty, sz_decimals)
+        sz_decimals = int(meta.get("szDecimals", 3)) 
+        size = round(request.qty * leverage, sz_decimals)
         
         if size <= 0:
             log.info("Size too small or zero → nothing to trade.")
             return
             
-        log.info("→ [%s POSITION] %s %s (impact + IOC – guaranteed fill)", request.side, size, symbol)
+        log.info("→ [%s POSITION] Size: %s %s (impact + IOC – guaranteed fill)", request.side, size, symbol)
         
         if request.signal in {SignalType.CLOSE_LONG, SignalType.CLOSE_SHORT}:
             log.info("   Closing position only.")
@@ -137,9 +153,9 @@ class HyperliquidService:
                 log.info("   Position filled: %s @ %s", st["totalSz"], st["avgPx"])
             else:
                 log.info("   Position Order result: %s", status)
-                
+
         return res
-        
+
 def _to_position_side(side: Side) -> PositionSide:
     """Convert TradingView Side enum (buy/sell) into Hyperliquid PositionSide."""
     if side == Side.BUY:
