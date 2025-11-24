@@ -54,6 +54,9 @@ class HyperliquidExecutionClient:
         
         pk = private_key if private_key.startswith("0x") else f"0x{private_key}"
         wallet = Account.from_key(pk)
+        
+        if not vault_address:
+            vault_address = None  # use main account if not provided
 
         self.exchange = Exchange(
             wallet,

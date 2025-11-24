@@ -70,7 +70,7 @@ def create_daemon() -> FastAPI:
     """Create and configure the FastAPI app."""
 
     # Create app first so we can attach settings or fail cleanly
-    app = FastAPI(title="Hypertrade Daemon", version="1.0.0")
+    app = FastAPI(title="Hypertrade Daemon", version="1.0.0", debug=True)
 
     # Load settings and configure logging; provide clear error if env missing
     try:
