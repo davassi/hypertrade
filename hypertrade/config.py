@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # ── REQUIRED SECRETS (will crash on import if missing) ─────────────────────
     master_addr: str
     api_wallet_priv: SecretStr
-    subaccount_addr: str
+    subaccount_addr: Optional[str] = None  # allowing None to enable trading on master account
 
     # ── Security & Networking ─────────────────────────────────────────────────
     api_url : str = "https://api.hyperliquid.xyz"
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     telegram_chat_id: Optional[str] = None
 
     # ── Validators ────────────────────────────────────────────────────────────
-    @field_validator("master_addr", "subaccount_addr")
+    @field_validator("master_addr")
     @classmethod
     def _not_blank(cls, value: str) -> str:
         if not value or not value.strip():

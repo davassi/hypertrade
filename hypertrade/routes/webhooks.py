@@ -94,15 +94,14 @@ async def hypertrade_webhook(
     # Config & Clients.
     # ===================================================================
     settings = get_settings()
+    vault_address: Optional[str] = settings.subaccount_addr
     
     client = HyperliquidService(
         base_url=settings.api_url,
         master_addr=settings.master_addr,
         api_wallet_priv=settings.api_wallet_priv.get_secret_value(),
-        subaccount_addr=None, # settings.subaccount_addr,
+        subaccount_addr=vault_address,
     )
-    
-    vault_address: Optional[str] = os.getenv("VAULT_ADDRESS") or None
     
     # Execute plugging into Hyperliquid SDK.
     order_request = OrderRequest(
@@ -115,7 +114,7 @@ async def hypertrade_webhook(
         post_only=False,
         client_id=None,
         leverage=payload.general.leverage,
-        subaccount=vault_address or None,
+        subaccount=vault_address,
     )
     
     print("\033[91mOrder Request:", order_request, "\033[0m")

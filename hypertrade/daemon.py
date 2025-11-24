@@ -1,7 +1,11 @@
 """ASGI app factory and configuration for the Hypertrade daemon."""
 
-import sys
 import logging
+import multiprocessing
+import os
+import signal
+import sys
+
 from fastapi import FastAPI
 from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -18,9 +22,9 @@ from .exception_handlers import register_exception_handlers
 
 log = logging.getLogger("uvicorn.error")
 
-def die_gracefully() -> None:
+def _please_die_gracefully() -> None:
     """Log a clear error message and exit if required secrets are missing."""
-    
+
     banner = (
         "\n"
         "╔" + "═" * 72 + "╗\n"
@@ -31,7 +35,7 @@ def die_gracefully() -> None:
         "\n"
         "    • HYPERTRADE_MASTER_ADDR      → your Hyperliquid master address\n"
         "    • HYPERTRADE_API_WALLET_PRIV  → 64-char hex private key (with or without 0x)\n"
-        "    • HYPERTRADE_SUBACCOUNT_ADDR  → your sub-account address\n"
+        "    • HYPERTRADE_SUBACCOUNT_ADDR  → your sub-account address (optional)\n"
         "\n\n"
 
         "The daemon will start automatically once these are set.\n"
@@ -39,22 +43,42 @@ def die_gracefully() -> None:
 
     log.info(banner)
     log.critical("Hypertrade startup aborted: missing required secrets")
+    _stop_parent_supervisor()
     sys.exit(1)
+
+
+def _stop_parent_supervisor() -> None:
+    """Signal uvicorn's parent process (if any) so reload/workers also exit."""
+
+    parent = multiprocessing.parent_process()
+    if not parent:
+        return
+
+    ppid = parent.pid
+    if not ppid or ppid == os.getpid():
+        return
+
+    try:
+        os.kill(ppid, signal.SIGTERM)
+        log.warning("Signaled parent process pid=%s to exit", ppid)
+    except OSError as exc:
+        # Parent already dead or signal not permitted; ignore and rely on sys.exit.
+        log.debug("Unable to signal parent process %s to exit: %s", ppid, exc)
 
 
 def create_daemon() -> FastAPI:
     """Create and configure the FastAPI app."""
 
     # Create app first so we can attach settings or fail cleanly
-    app_ = FastAPI(title="Hypertrade Daemon", version="1.0.0")
+    app = FastAPI(title="Hypertrade Daemon", version="1.0.0")
 
     # Load settings and configure logging; provide clear error if env missing
     try:
         settings = get_settings()
     except ValidationError:
-        die_gracefully()
+        _please_die_gracefully()
 
-    app_.state.settings = settings
+    app.state.settings = settings
 
     # Pre-bind optional Telegram notifier to avoid per-request env access
     if (
@@ -68,19 +92,19 @@ def create_daemon() -> FastAPI:
         def _telegram_notify(text: str, _token=token, _chat_id=chat_id):
             return send_telegram_message(_token, _chat_id, text)
 
-        app_.state.telegram_notify = _telegram_notify
+        app.state.telegram_notify = _telegram_notify
         log.info("Telegram notifications enabled")
     else:
-        app_.state.telegram_notify = None
+        app.state.telegram_notify = None
 
     # Finalize logging with configured level and add middleware
-    app_.add_middleware(LoggingMiddleware)
-    app_.add_middleware(
+    app.add_middleware(LoggingMiddleware)
+    app.add_middleware(
         ContentLengthLimitMiddleware, max_bytes=settings.max_payload_bytes
     )
     if settings.rate_limit_enabled:
         whitelist = settings.tv_webhook_ips if settings.ip_whitelist_enabled else []
-        app_.add_middleware(
+        app.add_middleware(
             RateLimitMiddleware,
             max_requests=settings.rate_limit_max_requests,
             window_seconds=settings.rate_limit_window_seconds,
@@ -91,10 +115,10 @@ def create_daemon() -> FastAPI:
             whitelist_ips=whitelist,
         )
     if settings.enable_trusted_hosts and settings.trusted_hosts:
-        app_.add_middleware(
+        app.add_middleware(
             TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts
         )
-    register_exception_handlers(app_)
+    register_exception_handlers(app)
     log.info(
         "App started env=%s whitelist_enabled=%s log_level=%s",
         settings.environment,
@@ -113,14 +137,31 @@ def create_daemon() -> FastAPI:
     )
 
     # Setting the Routers up
-    app_.include_router(health_router)
-    app_.include_router(webhooks_router)
+    app.include_router(health_router)
+    app.include_router(webhooks_router)
 
     # Log endpoints after routes are registered
-    log_endpoints(app_)
+    log_endpoints(app)
 
-    return app_
+    return app
 
 
 # Expose ASGI app for uvicorn
 app = create_daemon()
+
+@app.on_event("startup")
+async def on_startup():
+    """Log that the daemon is ready."""
+    settings = get_settings()
+    log.info("Hypertrade Daemon is ready to accept requests on: '%s'",
+        settings.subaccount_addr or "MASTER ACCOUNT")
+    
+    if not settings.subaccount_addr:
+        log.warning(
+            "Trading on MASTER account (no sub-account set)! This is NOT recommended for safety."
+        )
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    """Log that the daemon is shutting down."""
+    log.info("Hypertrade Daemon is shutting down.")
