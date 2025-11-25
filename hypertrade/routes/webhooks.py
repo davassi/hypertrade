@@ -59,9 +59,9 @@ async def hypertrade_webhook(
     log.debug("Full webhook payload: %s", raw)
     
     signal = parse_signal(payload)
-    print("\033[91mSIGNAL:", signal, "\033[0m")
+    print("\033[91m SIGNAL:", signal, "\033[0m")
     side = signal_to_side(signal)
-    print("\033[91mSIDE:", side, "\033[0m")
+    print("\033[91m SIDE:", side, "\033[0m")
     
     if not side or signal == SignalType.NO_ACTION:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -81,7 +81,7 @@ async def hypertrade_webhook(
         raise HTTPException(status_code=400, detail="Invalid 'contracts' or 'price' value") from exc
         
     # Fifth: processing logic here (TODO: would be good to enqueue the job).
-    nominal_quantity = float(contracts * price) 
+    nominal_quantity = float(contracts * price)
     
     log.info(
         "[%s] %s (%s) [price='%.2f',size='%s',qty='%.2f' USDC] %s",
@@ -99,6 +99,7 @@ async def hypertrade_webhook(
     # ===================================================================
     settings = get_settings()
     vault_address: Optional[str] = settings.subaccount_addr
+    leverage = _parse_leverage(payload.general.leverage)
     
     client = HyperliquidService(
         base_url=settings.api_url,
@@ -117,7 +118,7 @@ async def hypertrade_webhook(
         reduce_only=False,
         post_only=False,
         client_id=None,
-        leverage=payload.general.leverage,
+        leverage=leverage,
         subaccount=vault_address,
     )
     
@@ -156,6 +157,22 @@ async def hypertrade_webhook(
     return response
 
 # Enums and parsing logic
+def _parse_leverage(raw: Optional[str]) -> Optional[int]:
+    """Convert TradingView leverage string (optionally ending with 'x') into an int."""
+    if raw is None:
+        return None
+    cleaned = str(raw).strip()
+    if not cleaned:
+        return None
+    if cleaned.lower().endswith("x"):
+        cleaned = cleaned[:-1].strip()
+    if not cleaned:
+        return None
+    try:
+        return int(cleaned)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid leverage value") from exc
+
 def signal_to_side(signal: SignalType) -> Optional[Side]:
     """Map SignalType to order Side, or None if not actionable."""
     if signal in (
@@ -302,7 +319,6 @@ def _build_response(
         "side": side.value,
         "symbol": symbol,
         "ticker": payload.general.ticker,
-        "exchange": payload.general.exchange,
         "action": payload.order.action,
         "contracts": str(payload.order.contracts),
         "price": str(payload.order.price),
@@ -324,7 +340,7 @@ def _format_telegram_message(
     price_text = str(payload.order.price) if payload.order.price is not None else "market"
     lines = [
         "HyperTrade Webhook",
-        f"Symbol: {symbol} @ {payload.general.exchange}",
+        f"Symbol: {symbol}",
         (
             f"Signal: {signal.value} | Side: {side.value} | Leverage: "
             f"{payload.general.leverage or '-'}"

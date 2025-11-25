@@ -188,6 +188,7 @@ class HyperliquidExecutionClient:
         if status == OrderStatus.RESTING:
             log.info("Cancelling resting order %s on %s", oid, symbol)
             return self.exchange.cancel(symbol, oid)
+        
         elif status == OrderStatus.FILLED:
             log.info(
                 "Reversing filled %s position (%s %s)",
@@ -196,6 +197,7 @@ class HyperliquidExecutionClient:
                 symbol,
             )
             return self.close_position(symbol, position_side, filled_size)
+        
         else:
             raise ValueError(f"Cannot handle order status: {status}")
         
@@ -211,6 +213,7 @@ class HyperliquidExecutionClient:
     def _extract_oid_and_status(res: Dict[str, Any]) -> Tuple[int, OrderStatus]:
         try:
             statuses = res["response"]["data"]["statuses"]
+        
             for s in statuses:
                 if OrderStatus.RESTING.value in s:
                     rest = s[OrderStatus.RESTING.value]
@@ -218,10 +221,14 @@ class HyperliquidExecutionClient:
                 if OrderStatus.FILLED.value in s:
                     filled = s[OrderStatus.FILLED.value]
                     return int(filled["oid"]), OrderStatus.FILLED
+        
             # Fallback: check for error
             if statuses and "error" in statuses[0]:
                 raise ValueError(statuses[0]["error"])
+            
+            # No known status found
             raise ValueError("No resting/filled status found")
+        
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"Failed to parse order response: {res}") from exc
 
@@ -245,7 +252,7 @@ class HyperliquidExecutionClient:
             meta = self.data.get_meta(symbol)
             decimals = int(meta.get("szDecimals", 3))  # fallback to 3
             return Decimal("1") / Decimal("10") ** decimals
-        except Exception:
+        except (TypeError, ValueError):
             return Decimal("0.001")
 
     def _normalize_price(self, symbol: str, price: float, is_buy: bool) -> float:

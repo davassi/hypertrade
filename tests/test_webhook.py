@@ -20,22 +20,13 @@ BASE_PAYLOAD = {
     "general": {
         "strategy": "Solana Super Cool Enhanced Strategy (114, 21, 1, 2, 0)",
         "ticker": "SOLUSD",
-        "exchange": "COINBASE",
         "interval": "60",
         "time": "2025-10-21T06:00:00Z",
         "timenow": "2025-10-21T06:00:45Z",
         "secret": "secret",
         "leverage": "1X",
     },
-    "symbol_data": {
-        "open": "183.90",
-        "close": "183.78",
-        "high": "183.91",
-        "low": "183.75",
-        "volume": "257.55477845",
-    },
     "currency": {"quote": "USD", "base": "SOL"},
-    "position": {"position_size": "0"},
     "order": {
         "action": "buy",
         "contracts": "46231.75300000",
@@ -108,6 +99,7 @@ def test_webhook_happy_path_ok(monkeypatch):
     client = TestClient(app)
 
     payload = copy.deepcopy(BASE_PAYLOAD)
+    StubHyperliquidService.last_order_request = None
     resp = client.post("/webhook", json=payload)
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -116,10 +108,12 @@ def test_webhook_happy_path_ok(monkeypatch):
     assert data["side"] == "buy"
     assert data["symbol"] == "SOL"
     assert data["ticker"] == "SOLUSD"
-    assert data["exchange"] == "COINBASE"
     assert data["action"] == "buy"
     assert data["contracts"] == "46231.75300000"
     assert data["price"] == "183.81"
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req is not None
+    assert order_req.leverage == 1
 
 def test_webhook_rejects_non_json_content_type(monkeypatch):
     """Returns 415 when Content-Type is not application/json."""
@@ -158,6 +152,18 @@ def test_webhook_rejects_bad_secret(monkeypatch):
     assert resp.status_code == 401
     body = resp.json()
     assert body["error"]["status"] == 401
+
+def test_webhook_invalid_leverage_returns_400(monkeypatch):
+    """Returns 400 when leverage cannot be parsed."""
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["general"]["leverage"] = "bogus"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error"]["status"] == 400
 
 
 def test_webhook_ip_whitelist_allows_forwarded(monkeypatch):
