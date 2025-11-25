@@ -26,11 +26,12 @@ class General(BaseModel):
 
 
 class Currency(BaseModel):
-    """Currency pair details (only base is consumed)."""
+    """Currency pair details (base is consumed, quote is optional)."""
 
     model_config = ConfigDict(extra="ignore")
 
     base: str
+    quote: Optional[str] = None
 
 
 class Order(BaseModel):

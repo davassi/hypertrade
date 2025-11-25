@@ -148,6 +148,7 @@ Don't forget to set up first the strategy name, the **"secret": "your-shared-sec
     "leverage": "3X"
   },
   "currency": {
+    "quote": "{{syminfo.currency}}",
     "base": "{{syminfo.basecurrency}}"
   },
   "order": {

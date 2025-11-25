@@ -26,7 +26,7 @@ BASE_PAYLOAD = {
         "secret": "secret",
         "leverage": "1X",
     },
-    "currency": {"base": "SOL"},
+    "currency": {"quote": "USD", "base": "SOL"},
     "order": {
         "action": "buy",
         "contracts": "46231.75300000",
@@ -99,6 +99,7 @@ def test_webhook_happy_path_ok(monkeypatch):
     client = TestClient(app)
 
     payload = copy.deepcopy(BASE_PAYLOAD)
+    StubHyperliquidService.last_order_request = None
     resp = client.post("/webhook", json=payload)
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -110,6 +111,9 @@ def test_webhook_happy_path_ok(monkeypatch):
     assert data["action"] == "buy"
     assert data["contracts"] == "46231.75300000"
     assert data["price"] == "183.81"
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req is not None
+    assert order_req.leverage == 1
 
 def test_webhook_rejects_non_json_content_type(monkeypatch):
     """Returns 415 when Content-Type is not application/json."""
@@ -148,6 +152,18 @@ def test_webhook_rejects_bad_secret(monkeypatch):
     assert resp.status_code == 401
     body = resp.json()
     assert body["error"]["status"] == 401
+
+def test_webhook_invalid_leverage_returns_400(monkeypatch):
+    """Returns 400 when leverage cannot be parsed."""
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["general"]["leverage"] = "bogus"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["error"]["status"] == 400
 
 
 def test_webhook_ip_whitelist_allows_forwarded(monkeypatch):

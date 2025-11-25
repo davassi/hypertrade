@@ -24,7 +24,8 @@ TRADINGVIEW_SCHEMA = {
             "type": "object",
             "required": ["base"],
             "properties": {
-                "base": {"type": "string", "minLength": 1}
+                "base": {"type": "string", "minLength": 1},
+                "quote": {"type": "string", "minLength": 1}
             },
             "additionalProperties": True
         },
