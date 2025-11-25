@@ -20,22 +20,13 @@ BASE_PAYLOAD = {
     "general": {
         "strategy": "Solana Super Cool Enhanced Strategy (114, 21, 1, 2, 0)",
         "ticker": "SOLUSD",
-        "exchange": "COINBASE",
         "interval": "60",
         "time": "2025-10-21T06:00:00Z",
         "timenow": "2025-10-21T06:00:45Z",
         "secret": "secret",
         "leverage": "1X",
     },
-    "symbol_data": {
-        "open": "183.90",
-        "close": "183.78",
-        "high": "183.91",
-        "low": "183.75",
-        "volume": "257.55477845",
-    },
-    "currency": {"quote": "USD", "base": "SOL"},
-    "position": {"position_size": "0"},
+    "currency": {"base": "SOL"},
     "order": {
         "action": "buy",
         "contracts": "46231.75300000",
@@ -116,7 +107,6 @@ def test_webhook_happy_path_ok(monkeypatch):
     assert data["side"] == "buy"
     assert data["symbol"] == "SOL"
     assert data["ticker"] == "SOLUSD"
-    assert data["exchange"] == "COINBASE"
     assert data["action"] == "buy"
     assert data["contracts"] == "46231.75300000"
     assert data["price"] == "183.81"

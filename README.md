@@ -141,25 +141,15 @@ Don't forget to set up first the strategy name, the **"secret": "your-shared-sec
   "general": {
     "strategy" : "your-strategy-name",
     "ticker": "{{ticker}}",
-    "exchange": "{{exchange}}",
     "interval": "{{interval}}",
     "time": "{{time}}",
     "timenow": "{{timenow}}",
     "secret": "your-shared-secret",
     "leverage": "3X"
   },
-  "symbol_data": {
-    "open": "{{open}}",
-    "close": "{{close}}",
-    "high": "{{high}}",
-    "low": "{{low}}",
-    "volume": "{{volume}}"
-  },
   "currency": {
-    "quote": "{{syminfo.currency}}",
     "base": "{{syminfo.basecurrency}}"
   },
-  "position": { "position_size": "{{strategy.position_size}}" },
   "order": {
     "action": "{{strategy.order.action}}",
     "contracts": "{{strategy.order.contracts}}",

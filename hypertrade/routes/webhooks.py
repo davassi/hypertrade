@@ -302,7 +302,6 @@ def _build_response(
         "side": side.value,
         "symbol": symbol,
         "ticker": payload.general.ticker,
-        "exchange": payload.general.exchange,
         "action": payload.order.action,
         "contracts": str(payload.order.contracts),
         "price": str(payload.order.price),
@@ -324,7 +323,7 @@ def _format_telegram_message(
     price_text = str(payload.order.price) if payload.order.price is not None else "market"
     lines = [
         "HyperTrade Webhook",
-        f"Symbol: {symbol} @ {payload.general.exchange}",
+        f"Symbol: {symbol}",
         (
             f"Signal: {signal.value} | Side: {side.value} | Leverage: "
             f"{payload.general.leverage or '-'}"

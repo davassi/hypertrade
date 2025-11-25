@@ -4,15 +4,14 @@ TRADINGVIEW_SCHEMA = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "additionalProperties": True,
-    "required": ["general", "symbol_data", "currency", "order", "market"],
+    "required": ["general", "currency", "order", "market"],
     "properties": {
         "general": {
             "type": "object",
-            "required": ["ticker", "exchange", "interval", "time", "timenow"],
+            "required": ["ticker", "interval", "time", "timenow"],
             "properties": {
                 "strategy": {"type": "string", "minLength": 1},
                 "ticker": {"type": "string", "minLength": 1},
-                "exchange": {"type": "string", "minLength": 1},
                 "interval": {"type": "string", "minLength": 1},
                 "time": {"type": "string", "format": "date-time"},
                 "timenow": {"type": "string", "format": "date-time"},
@@ -21,32 +20,11 @@ TRADINGVIEW_SCHEMA = {
             },
             "additionalProperties": True
         },
-        "symbol_data": {
-            "type": "object",
-            "required": ["open", "close", "high", "low", "volume"],
-            "properties": {
-                "open": {"type": ["string", "number"]},
-                "close": {"type": ["string", "number"]},
-                "high": {"type": ["string", "number"]},
-                "low": {"type": ["string", "number"]},
-                "volume": {"type": ["string", "number"]}
-            },
-            "additionalProperties": True
-        },
         "currency": {
             "type": "object",
-            "required": ["quote", "base"],
+            "required": ["base"],
             "properties": {
-                "quote": {"type": "string", "minLength": 1},
                 "base": {"type": "string", "minLength": 1}
-            },
-            "additionalProperties": True
-        },
-        "position": {
-            "type": "object",
-            "required": ["position_size"],
-            "properties": {
-                "position_size": {"type": ["string", "number"]}
             },
             "additionalProperties": True
         },
