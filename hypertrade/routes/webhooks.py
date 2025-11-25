@@ -3,6 +3,7 @@
 import os
 import logging
 import hmac
+import time
 
 from datetime import datetime, timezone
 from typing import Optional
@@ -36,6 +37,7 @@ async def hypertrade_webhook(
     background_tasks: BackgroundTasks
 ) -> dict:
     """Main webhook endpoint: validates, parses, logs, and returns a summary."""
+    start_time = time.perf_counter()
     
     # Let's start with our checks.
 
@@ -62,6 +64,8 @@ async def hypertrade_webhook(
     print("\033[91mSIDE:", side, "\033[0m")
     
     if not side or signal == SignalType.NO_ACTION:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        log.info("Webhook ignored in %.1f ms", elapsed_ms)
         return JSONResponse({
             "status": "ignored",
             "reason": "no_action",
@@ -147,6 +151,8 @@ async def hypertrade_webhook(
         )
         background_tasks.add_task(notifier, text)
 
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
+    log.info("Webhook processed in %.1f ms", elapsed_ms)
     return response
 
 # Enums and parsing logic
