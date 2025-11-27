@@ -42,3 +42,5 @@ htmlcov/
 # dotenv
 .env
 
+hypertrade-prod.sh
+hypertrade-test.sh
