@@ -69,7 +69,14 @@ class HyperliquidService:
         api_wallet_priv: Optional[str] = None,
         subaccount_addr: Optional[str] = None,
     ):
-        self.base_url = base_url or os.getenv("HL_BASE_URL", "https://api.hyperliquid.xyz") 
+        self.base_url = base_url or os.getenv("HL_BASE_URL", "https://api.hyperliquid.xyz")
+        self.subaccount_addr = subaccount_addr
+
+        log.debug(
+            "Initializing HyperliquidService: master=%s subaccount=%s",
+            master_addr, subaccount_addr or "(not set)"
+        )
+
         self.client = HyperliquidExecutionClient(
             private_key=api_wallet_priv,
             account_address=master_addr,
@@ -77,6 +84,12 @@ class HyperliquidService:
             base_url=self.base_url,
             default_premium_bps=5.0,
         )
+
+        # Log which account will be used for trading
+        if subaccount_addr:
+            log.info("Trading account: SUBACCOUNT %s", subaccount_addr)
+        else:
+            log.info("Trading account: MASTER %s", master_addr)
     
     def place_order(self, request: OrderRequest) -> dict:
         """Validate and place an order."""

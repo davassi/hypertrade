@@ -81,6 +81,8 @@ async def lifespan(app: FastAPI):
         log.warning(
             "Trading on MASTER account (no sub-account set)! This is NOT recommended for safety."
         )
+    else:
+        log.info("Trading restricted to subaccount: %s", settings.subaccount_addr)
 
     yield
 

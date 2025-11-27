@@ -147,7 +147,13 @@ async def hypertrade_webhook(
     settings = get_settings()
     vault_address: Optional[str] = settings.subaccount_addr
     leverage = _parse_leverage(payload.general.leverage)
-    
+
+    # Validate that if subaccount is configured, it will be used
+    if vault_address:
+        log.debug("Subaccount configured: %s - order will trade on subaccount", vault_address)
+    else:
+        log.debug("No subaccount configured - order will trade on master account")
+
     client = HyperliquidService(
         base_url=settings.api_url,
         master_addr=settings.master_addr,
