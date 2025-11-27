@@ -67,11 +67,32 @@ def _stop_parent_supervisor() -> None:
         log.debug("Unable to signal parent process %s to exit: %s", ppid, exc)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage app startup and shutdown events."""
+    
+    # Startup: Log that the daemon is ready
+    settings = get_settings()
+    
+    log.info("Hypertrade Daemon is ready to accept requests on: '%s'",
+        settings.subaccount_addr or "MASTER ACCOUNT")
+
+    if not settings.subaccount_addr:
+        log.warning(
+            "Trading on MASTER account (no sub-account set)! This is NOT recommended for safety."
+        )
+
+    yield
+
+    # Shutdown: Log that the daemon is shutting down
+    log.info("Hypertrade Daemon is shutting down.")
+
+
 def create_daemon() -> FastAPI:
     """Create and configure the FastAPI app."""
 
     # Create app first so we can attach settings or fail cleanly
-    app = FastAPI(title="Hypertrade Daemon", version="1.0.0")
+    app = FastAPI(title="Hypertrade Daemon", version="1.0.0", lifespan=lifespan)
 
     # Load settings and configure logging; provide clear error if env missing
     try:
@@ -149,20 +170,3 @@ def create_daemon() -> FastAPI:
 
 # Expose ASGI app for uvicorn
 app = create_daemon()
-
-@app.on_event("startup")
-async def on_startup():
-    """Log that the daemon is ready."""
-    settings = get_settings()
-    log.info("Hypertrade Daemon is ready to accept requests on: '%s'",
-        settings.subaccount_addr or "MASTER ACCOUNT")
-    
-    if not settings.subaccount_addr:
-        log.warning(
-            "Trading on MASTER account (no sub-account set)! This is NOT recommended for safety."
-        )
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    """Log that the daemon is shutting down."""
-    log.info("Hypertrade Daemon is shutting down.")
