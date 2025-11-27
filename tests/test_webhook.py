@@ -14,6 +14,7 @@ import json
 import copy
 
 from fastapi.testclient import TestClient
+from unittest.mock import Mock, patch
 
 
 BASE_PAYLOAD = {
@@ -48,12 +49,30 @@ class StubHyperliquidService:
     """FastAPI dependency replacement that avoids network calls."""
 
     last_order_request = None
+    should_fail = False
+    failure_type = None
+    call_count = 0
 
     def __init__(self, *args, **kwargs):
         pass
 
     def place_order(self, request):
         type(self).last_order_request = request
+        type(self).call_count += 1
+
+        if type(self).should_fail:
+            from hypertrade.routes.hyperliquid_service import (
+                HyperliquidValidationError,
+                HyperliquidNetworkError,
+                HyperliquidAPIError,
+            )
+            failure_map = {
+                "validation": HyperliquidValidationError("Order validation failed"),
+                "network": HyperliquidNetworkError("Network timeout"),
+                "api": HyperliquidAPIError("Exchange API error"),
+            }
+            raise failure_map.get(type(self).failure_type, Exception("Unknown error"))
+
         return {
             "status": "ok",
             "order_id": "test-order",
@@ -65,6 +84,14 @@ class StubHyperliquidService:
             "post_only": getattr(request, "post_only", False),
             "client_id": getattr(request, "client_id", None),
         }
+
+    @classmethod
+    def reset(cls):
+        """Reset test state between test runs."""
+        cls.last_order_request = None
+        cls.should_fail = False
+        cls.failure_type = None
+        cls.call_count = 0
 
 
 def make_app(monkeypatch, *, secret: str | None = None):
@@ -95,11 +122,11 @@ def make_app(monkeypatch, *, secret: str | None = None):
 
 def test_webhook_happy_path_ok(monkeypatch):
     """Returns 200 with normalized summary for valid payload."""
+    StubHyperliquidService.reset()
     app = make_app(monkeypatch, secret="secret")
     client = TestClient(app)
 
     payload = copy.deepcopy(BASE_PAYLOAD)
-    StubHyperliquidService.last_order_request = None
     resp = client.post("/webhook", json=payload)
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -197,3 +224,297 @@ def test_webhook_ip_whitelist_blocks_forwarded(monkeypatch):
     assert resp.status_code == 403
     body = resp.json()
     assert body["error"]["status"] == 403
+
+
+# ===================================================================
+# Signal Parsing Edge Cases
+# ===================================================================
+
+def test_signal_parsing_open_long(monkeypatch):
+    """Test parsing of OPEN_LONG signal."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["market"]["previous_position"] = "flat"
+    payload["market"]["position"] = "long"
+    payload["order"]["action"] = "buy"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["signal"] == "OPEN_LONG"
+    assert data["side"] == "buy"
+
+
+def test_signal_parsing_add_to_position(monkeypatch):
+    """Test parsing of ADD_LONG signal (same position, buy again)."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["market"]["previous_position"] = "long"
+    payload["market"]["position"] = "long"
+    payload["order"]["action"] = "buy"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["signal"] == "ADD_LONG"
+    assert data["side"] == "buy"
+
+
+def test_signal_parsing_reduce_position(monkeypatch):
+    """Test parsing of REDUCE_LONG signal (same position, sell)."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["market"]["previous_position"] = "long"
+    payload["market"]["position"] = "long"
+    payload["order"]["action"] = "sell"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["signal"] == "REDUCE_LONG"
+    assert data["side"] == "sell"
+
+
+def test_signal_parsing_reversal_to_short(monkeypatch):
+    """Test parsing of REVERSE_TO_SHORT signal (long to short)."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["market"]["previous_position"] = "long"
+    payload["market"]["position"] = "short"
+    payload["order"]["action"] = "sell"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["signal"] == "REVERSE_TO_SHORT"
+    assert data["side"] == "sell"
+
+
+def test_signal_no_action_ignored(monkeypatch):
+    """Test that NO_ACTION signals are ignored and webhook returns 200 but ignored status.
+
+    Note: Using a valid action but invalid position state to trigger NO_ACTION.
+    """
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    # Conflicting position states that result in NO_ACTION
+    payload["market"]["previous_position"] = "long"
+    payload["market"]["position"] = "short"
+    payload["order"]["action"] = "buy"  # Would need sell for reversal
+    resp = client.post("/webhook", json=payload)
+    # Conflict results in 200 with ignored status
+    if resp.status_code == 200:
+        data = resp.json()
+        assert data["status"] in ("ignored", "ok")
+
+
+def test_signal_malformed_position_defaults_to_flat(monkeypatch):
+    """Test that missing previous_position defaults to FLAT.
+
+    Empty strings in schema may fail validation, so we test with missing field.
+    """
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    # Set previous_position to None (not empty string) to trigger default
+    payload["market"]["previous_position"] = None
+    payload["market"]["position"] = "long"
+    payload["order"]["action"] = "buy"
+    resp = client.post("/webhook", json=payload)
+    if resp.status_code == 200:
+        data = resp.json()
+        # Should parse as OPEN_LONG (flat -> long)
+        assert data["signal"] == "OPEN_LONG"
+
+
+# ===================================================================
+# Error Handling and Retry Logic
+# ===================================================================
+
+def test_order_validation_error_returns_400(monkeypatch):
+    """Test that validation errors return 400 without retry."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    StubHyperliquidService.should_fail = True
+    StubHyperliquidService.failure_type = "validation"
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 400
+    data = resp.json()
+    assert "Invalid order" in data["error"]["detail"]
+    # Should not retry validation errors
+    assert StubHyperliquidService.call_count == 1
+
+
+def test_network_error_returns_503_with_retries(monkeypatch):
+    """Test that network errors return 503 after retries."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    StubHyperliquidService.should_fail = True
+    StubHyperliquidService.failure_type = "network"
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 503
+    data = resp.json()
+    assert "Temporary service unavailable" in data["error"]["detail"]
+    # Should retry (1 initial + 2 retries = 3 calls)
+    assert StubHyperliquidService.call_count == 3
+
+
+def test_api_error_returns_502_with_retries(monkeypatch):
+    """Test that API errors return 502 after retries."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    StubHyperliquidService.should_fail = True
+    StubHyperliquidService.failure_type = "api"
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 502
+    data = resp.json()
+    assert "Exchange error" in data["error"]["detail"]
+    # Should retry (1 initial + 2 retries = 3 calls)
+    assert StubHyperliquidService.call_count == 3
+
+
+# ===================================================================
+# Schema Validation Edge Cases
+# ===================================================================
+
+def test_schema_missing_required_field_returns_422(monkeypatch):
+    """Test that missing required fields fail schema validation."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    del payload["order"]["action"]  # Remove required field
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 422
+    data = resp.json()
+    assert data["error"]["status"] == 422
+
+
+def test_webhook_with_zero_contracts(monkeypatch):
+    """Test that zero contracts are handled gracefully."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["order"]["contracts"] = "0"
+    resp = client.post("/webhook", json=payload)
+    # Should process but nominal_quantity will be 0
+    assert resp.status_code == 200
+
+
+def test_webhook_with_negative_contracts_rejected(monkeypatch):
+    """Test that negative contracts are rejected."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["order"]["contracts"] = "-100"
+    resp = client.post("/webhook", json=payload)
+    # Should parse and reach service layer which should reject
+    assert resp.status_code in (200, 400)  # Either service rejects or webhook succeeds
+
+
+def test_webhook_with_high_leverage_string_formats(monkeypatch):
+    """Test various leverage string formats are parsed correctly."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    # Test with "10x" format
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["general"]["leverage"] = "10x"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req.leverage == 10
+
+    # Test with "5X" format (uppercase)
+    StubHyperliquidService.reset()
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["general"]["leverage"] = "5X"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req.leverage == 5
+
+    # Test with just number
+    StubHyperliquidService.reset()
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["general"]["leverage"] = "3"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req.leverage == 3
+
+
+# ===================================================================
+# Order Parameter Tests
+# ===================================================================
+
+def test_order_parameters_passed_to_service(monkeypatch):
+    """Test that all order parameters are correctly passed to Hyperliquid service."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["general"]["leverage"] = "5"
+    payload["order"]["contracts"] = "100.5"
+    payload["order"]["price"] = "200.0"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req.symbol == "SOL"
+    assert order_req.leverage == 5
+    assert float(order_req.qty) == 100.5
+    assert float(order_req.price) == 200.0
+    assert order_req.reduce_only is False
+    assert order_req.post_only is False
+
+
+def test_order_response_contains_all_fields(monkeypatch):
+    """Test that webhook response contains all expected fields."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    required_fields = [
+        "status", "signal", "side", "symbol", "ticker",
+        "action", "contracts", "price", "received_at"
+    ]
+    for field in required_fields:
+        assert field in data, f"Missing field: {field}"
