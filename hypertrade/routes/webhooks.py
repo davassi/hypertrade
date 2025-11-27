@@ -22,10 +22,51 @@ from ..security import require_ip_whitelisted
 
 from ..routes.tradingview_enums import SignalType, PositionType, OrderAction, Side
 
-from .hyperliquid_service import HyperliquidService, OrderRequest
+from .hyperliquid_service import (
+    HyperliquidService,
+    OrderRequest,
+    HyperliquidValidationError,
+    HyperliquidNetworkError,
+    HyperliquidAPIError,
+)
 
 router = APIRouter(tags=["webhooks"])
 log = logging.getLogger("uvicorn.error")
+
+def _place_order_with_retry(client: HyperliquidService, order_request: OrderRequest, max_retries: int = 2) -> dict:
+    """Attempt to place an order with exponential backoff for transient failures.
+
+    Args:
+        client: HyperliquidService instance
+        order_request: Order details
+        max_retries: Maximum number of retry attempts (excluding first attempt)
+
+    Returns:
+        Order result from API
+
+    Raises:
+        HyperliquidValidationError: For bad input (no retry)
+        HyperliquidAPIError: For persistent API failures (retried)
+        HyperliquidNetworkError: For network errors (retried)
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return client.place_order(order_request)
+        except HyperliquidValidationError:
+            # Don't retry validation errors - they're permanent
+            log.warning("Order validation failed, not retrying: %s", order_request)
+            raise
+        except (HyperliquidNetworkError, HyperliquidAPIError) as e:
+            if attempt < max_retries:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s...
+                log.warning(
+                    "Order placement attempt %d/%d failed, retrying in %ds: %s",
+                    attempt + 1, max_retries + 1, wait_time, str(e)
+                )
+                time.sleep(wait_time)
+            else:
+                log.error("Order placement failed after %d attempts", max_retries + 1)
+                raise
 
 @router.post(
     "/webhook",
@@ -57,11 +98,17 @@ async def hypertrade_webhook(
     payload = TradingViewWebhook.model_validate(raw)
 
     log.debug("Full webhook payload: %s", raw)
-    
+
     signal = parse_signal(payload)
-    print("\033[91m SIGNAL:", signal, "\033[0m")
+    log.debug(
+        "Signal parsed: signal=%s action=%s current_position=%s previous_position=%s",
+        signal.value,
+        payload.order.action,
+        payload.market.position,
+        payload.market.previous_position,
+    )
     side = signal_to_side(signal)
-    print("\033[91m SIDE:", side, "\033[0m")
+    log.debug("Position side resolved: signal=%s side=%s", signal.value, side.value if side else None)
     
     if not side or signal == SignalType.NO_ACTION:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -84,14 +131,14 @@ async def hypertrade_webhook(
     nominal_quantity = float(contracts * price)
     
     log.info(
-        "[%s] %s (%s) [price='%.2f',size='%s',qty='%.2f' USDC] %s",
-        payload.order.action.upper() == "BUY" and "LONG" or "SHORT",
+        "Order parameters: direction=%s symbol=%s interval=%s price=%.2f contracts=%s notional_qty=%.2f alert=%s",
+        payload.order.action.upper(),
         payload.general.ticker.upper(),
         payload.general.interval,
         price,
         contracts,
         nominal_quantity,
-        payload.order.alert_message or "",
+        payload.order.alert_message or "(none)",
     )
     
     # ===================================================================
@@ -121,20 +168,38 @@ async def hypertrade_webhook(
         leverage=leverage,
         subaccount=vault_address,
     )
-    
-    print("\033[91mOrder Request:", order_request, "\033[0m")
-    
-    # ===================================================================
-    # EXECUTION: Place the order.
-    # ===================================================================
-    
-    try:
-        result = client.place_order(order_request)
-    except Exception as e:
-        log.exception("Order placement failed")
-        raise HTTPException(status_code=502, detail=f"Order placement failed: {e}") from e
 
-    log.info("Order placed result: %s", result)
+    log.debug(
+        "Order request prepared: symbol=%s side=%s qty=%s price=%s leverage=%sx reduce_only=%s",
+        order_request.symbol,
+        order_request.side.value,
+        order_request.qty,
+        order_request.price,
+        order_request.leverage or 1,
+        order_request.reduce_only,
+    )
+
+    # ===================================================================
+    # EXECUTION: Place the order with retry logic.
+    # ===================================================================
+
+    try:
+        log.info("Attempting to place order on Hyperliquid: symbol=%s side=%s", symbol, side.value)
+        result = _place_order_with_retry(client, order_request, max_retries=2)
+    except HyperliquidValidationError as e:
+        log.warning("Order validation error: %s", e)
+        raise HTTPException(status_code=400, detail=f"Invalid order: {e}") from e
+    except HyperliquidNetworkError as e:
+        log.error("Network error placing order (after retries): %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail="Temporary service unavailable - order may have been placed, check manually"
+        ) from e
+    except HyperliquidAPIError as e:
+        log.error("API error placing order (after retries): %s", e)
+        raise HTTPException(status_code=502, detail=f"Exchange error: {e}") from e
+
+    log.info("Order placed successfully: %s", result)
     
     # Finally: build a response.
     response = _build_response(payload, signal=signal, side=side, symbol=symbol)

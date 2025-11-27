@@ -43,7 +43,16 @@ class OrderResult:
     client_id: Optional[str]
 
 class HyperliquidError(Exception):
-    """Raised for client-level errors or unimplemented operations."""
+    """Base exception for Hyperliquid client errors."""
+
+class HyperliquidNetworkError(HyperliquidError):
+    """Raised for network-related errors (transient failures, can retry)."""
+
+class HyperliquidValidationError(HyperliquidError):
+    """Raised for validation errors (bad input, won't retry)."""
+
+class HyperliquidAPIError(HyperliquidError):
+    """Raised for API-level errors from Hyperliquid."""
 
 class HyperliquidService:
     """Thin wrapper around Hyperliquid SDK/API.
@@ -71,19 +80,20 @@ class HyperliquidService:
     
     def place_order(self, request: OrderRequest) -> dict:
         """Validate and place an order."""
-        
+
         # Basic validation/normalization
         if request.qty is None or Decimal(request.qty) <= 0:
-            raise HyperliquidError("Quantity must be > 0")
-          
+            raise HyperliquidValidationError("Quantity must be > 0")
+
         if not request.symbol:
-            raise HyperliquidError("Symbol required")
+            raise HyperliquidValidationError("Symbol required")
 
         symbol = request.symbol.upper()
 
         # ===================================================================
         # Fresh data right before trading
         # ===================================================================
+        log.debug("Fetching market data for symbol=%s", symbol)
         mid_price = (self.client.data.get_mid(symbol))
         mark_price = (self.client.data.get_mark(symbol))
 
@@ -93,42 +103,46 @@ class HyperliquidService:
         max_leverage = meta.get("maxLeverage", 1)
         sz_decimals = int(meta.get("szDecimals", 3))
 
-        log.info("%s Mid: %.6f | Mark: %.6f", symbol, mid_price, mark_price)
-        log.info("Available balance: %.2f USDC", available)
-        log.info("Max leverage: %sx | Size decimals: %s", max_leverage, sz_decimals)
+        log.info(
+            "Market data retrieved: symbol=%s mid_price=%.6f mark_price=%.6f available_balance=%.2f max_leverage=%sx sz_decimals=%s",
+            symbol, mid_price, mark_price, available, max_leverage, sz_decimals
+        )
 
         # ===================================================================
         # Set the requested leverage
         # ===================================================================
         leverage = int(request.leverage or 1)
-        log.info("Setting leverage for %s to %s x", symbol, leverage)
-        
+        log.debug("Requested leverage: symbol=%s requested=%sx max_allowed=%sx", symbol, leverage, max_leverage)
+
         if leverage < 1 or leverage > max_leverage:
-            raise HyperliquidError(f"Requested leverage {leverage}x is out of bounds (1–{max_leverage}x)")
+            log.warning("Leverage validation failed: symbol=%s requested=%sx max_allowed=%sx", symbol, leverage, max_leverage)
+            raise HyperliquidValidationError(f"Requested leverage {leverage}x is out of bounds (1–{max_leverage}x)")
 
         # Update leverage first as shown in the SDK examples
+        log.debug("Updating leverage on exchange: symbol=%s leverage=%sx", symbol, leverage)
         leverage_response = self.client.update_leverage(leverage, symbol)
 
         if leverage_response.get('status') != 'ok':
-            log.warning("Leverage setting may have failed: %s", {json.dumps(leverage_response, indent=2)})
+            log.warning("Leverage update may have failed: symbol=%s response=%s", symbol, json.dumps(leverage_response, indent=2))
         else:
-            log.info("Updating leverage for %s to %sx", symbol, leverage)
+            log.debug("Leverage updated successfully: symbol=%s leverage=%sx", symbol, leverage)
 
         # ===================================================================
         # Safe position sizing (Set up max around 85% of available, never 100%)
         # ===================================================================
         # Round to asset's size decimals (critical!)
-        
+
         size = round(request.qty * leverage, sz_decimals)
-        
+        log.debug("Position size calculated: contracts=%s leverage=%sx size=%s sz_decimals=%s", request.qty, leverage, size, sz_decimals)
+
         if size <= 0:
-            log.info("Size too small or zero → nothing to trade.")
-            raise HyperliquidError("Size too small or zero → nothing to trade.")
-            
-        log.info("→ [%s POSITION] Size: %s %s (impact + IOC – guaranteed fill)", request.side, size, symbol)
-        
+            log.warning("Position size invalid: size=%s contracts=%s leverage=%s", size, request.qty, leverage)
+            raise HyperliquidValidationError("Size too small or zero → nothing to trade.")
+
+        log.info("Executing %s position: symbol=%s size=%s side=%s signal=%s", "CLOSE" if request.signal in {SignalType.CLOSE_LONG, SignalType.CLOSE_SHORT} else "OPEN/ADD", symbol, size, request.side, request.signal)
+
         if request.signal in {SignalType.CLOSE_LONG, SignalType.CLOSE_SHORT}:
-            log.info("   Closing position only.")
+            log.debug("Closing position: symbol=%s side=%s size=%s", symbol, request.signal, size)
             res = self.client.close_position(
                 symbol=symbol,
                 side=_signal_to_position_side(request.signal),
@@ -136,7 +150,7 @@ class HyperliquidService:
                 premium_bps=80,
             )
         else:
-            log.info("   Opening/adding position.")    
+            log.debug("Opening/adding position: symbol=%s side=%s size=%s", symbol, request.side, size)
             res = self.client.market_order(
                 symbol=symbol,
                 side=_to_position_side(request.side),
@@ -146,15 +160,15 @@ class HyperliquidService:
         
         # Safe printing – handle both filled and error cases
         if res is None:
-            log.error("  Position creation did not work.")
-            raise HyperliquidError("Order Creation did not work")
+            log.error("Order execution failed: symbol=%s side=%s size=%s (no response from API)", symbol, request.side, size)
+            raise HyperliquidAPIError("Order Creation did not work")
         else:
             status = res["response"]["data"]["statuses"][0]
             if "filled" in status:
                 st = status["filled"]
-                log.info("   Position filled: %s @ %s", st["totalSz"], st["avgPx"])
+                log.info("Order filled successfully: symbol=%s size=%s avg_price=%s total_sz=%s", symbol, size, st["avgPx"], st["totalSz"])
             else:
-                log.info("   Position Order result: %s", status)
+                log.info("Order submitted: symbol=%s status=%s", symbol, status)
 
         return res
 
