@@ -5,6 +5,7 @@ import multiprocessing
 import os
 import signal
 import sys
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from pydantic import ValidationError
