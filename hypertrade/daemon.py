@@ -18,6 +18,7 @@ from .middleware.content_limit import ContentLengthLimitMiddleware
 from .middleware.rate_limit import RateLimitMiddleware
 from .routes.health import router as health_router
 from .routes.webhooks import router as webhooks_router, history_router
+from .routes.admin import router as admin_router
 from .notify import send_telegram_message
 from .exception_handlers import register_exception_handlers
 from .database import OrderDatabase
@@ -178,6 +179,7 @@ def create_daemon() -> FastAPI:
     app.include_router(health_router)
     app.include_router(webhooks_router)
     app.include_router(history_router)
+    app.include_router(admin_router)
 
     # Log endpoints after routes are registered
     log_endpoints(app)
