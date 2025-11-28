@@ -42,3 +42,6 @@ htmlcov/
 # dotenv
 .env
 
+# Database files
+hypertrade.db
+*.db
