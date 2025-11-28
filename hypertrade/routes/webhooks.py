@@ -4,6 +4,7 @@ import os
 import logging
 import hmac
 import time
+import json
 
 from datetime import datetime, timezone
 from typing import Optional
@@ -31,6 +32,7 @@ from .hyperliquid_service import (
 )
 
 router = APIRouter(tags=["webhooks"])
+history_router = APIRouter(tags=["history"])
 log = logging.getLogger("uvicorn.error")
 
 def _place_order_with_retry(client: HyperliquidService, order_request: OrderRequest, max_retries: int = 2) -> dict:
@@ -189,23 +191,105 @@ async def hypertrade_webhook(
     # EXECUTION: Place the order with retry logic.
     # ===================================================================
 
+    req_id = getattr(request.state, "request_id", None)
+    db = getattr(request.app.state, "db", None)
+
     try:
         log.info("Attempting to place order on Hyperliquid: symbol=%s side=%s", symbol, side.value)
         result = _place_order_with_retry(client, order_request, max_retries=2)
     except HyperliquidValidationError as e:
         log.warning("Order validation error: %s", e)
+        if db and req_id:
+            db.log_order(
+                request_id=req_id,
+                symbol=symbol,
+                side=side.value,
+                signal=signal.value,
+                quantity=contracts,
+                price=price,
+                leverage=leverage,
+                subaccount=vault_address,
+                status="REJECTED",
+                execution_ms=(time.perf_counter() - start_time) * 1000,
+            )
+            db.log_failure(
+                request_id=req_id,
+                error_type=e.__class__.__name__,
+                error_message=str(e),
+                attempt=1,
+                retry_count=0,
+            )
         raise HTTPException(status_code=400, detail=f"Invalid order: {e}") from e
     except HyperliquidNetworkError as e:
         log.error("Network error placing order (after retries): %s", e)
+        if db and req_id:
+            db.log_order(
+                request_id=req_id,
+                symbol=symbol,
+                side=side.value,
+                signal=signal.value,
+                quantity=contracts,
+                price=price,
+                leverage=leverage,
+                subaccount=vault_address,
+                status="FAILED",
+                execution_ms=(time.perf_counter() - start_time) * 1000,
+            )
+            db.log_failure(
+                request_id=req_id,
+                error_type=e.__class__.__name__,
+                error_message=str(e),
+                attempt=3,
+                retry_count=2,
+            )
         raise HTTPException(
             status_code=503,
             detail="Temporary service unavailable - order may have been placed, check manually"
         ) from e
     except HyperliquidAPIError as e:
         log.error("API error placing order (after retries): %s", e)
+        if db and req_id:
+            db.log_order(
+                request_id=req_id,
+                symbol=symbol,
+                side=side.value,
+                signal=signal.value,
+                quantity=contracts,
+                price=price,
+                leverage=leverage,
+                subaccount=vault_address,
+                status="FAILED",
+                execution_ms=(time.perf_counter() - start_time) * 1000,
+            )
+            db.log_failure(
+                request_id=req_id,
+                error_type=e.__class__.__name__,
+                error_message=str(e),
+                attempt=3,
+                retry_count=2,
+            )
         raise HTTPException(status_code=502, detail=f"Exchange error: {e}") from e
 
     log.info("Order placed successfully: %s", result)
+
+    # Log successful order
+    if db and req_id:
+        db.log_order(
+            request_id=req_id,
+            symbol=symbol,
+            side=side.value,
+            signal=signal.value,
+            quantity=contracts,
+            price=price,
+            leverage=leverage,
+            subaccount=vault_address,
+            status="PLACED",
+            order_id=result.get("orderId"),
+            avg_price=result.get("avgPx"),
+            total_size=result.get("totalSz"),
+            response_json=json.dumps(result) if result else None,
+            execution_ms=(time.perf_counter() - start_time) * 1000,
+        )
     
     # Finally: build a response.
     response = _build_response(payload, signal=signal, side=side, symbol=symbol)
@@ -445,3 +529,139 @@ def require_env(var_name: str) -> str:
         log.info("Missing required environment variable: %s", var_name)
         raise ValueError(var_name + " must be provided")
     return value
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# History & Analytics Endpoints
+# ═══════════════════════════════════════════════════════════════════════════
+
+@history_router.get(
+    "/history/orders",
+    summary="Get order execution history",
+)
+async def get_orders_history(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    symbol: Optional[str] = None,
+    status: Optional[str] = None,
+    side: Optional[str] = None,
+) -> dict:
+    """Retrieve order execution history from database.
+
+    Args:
+        limit: Maximum number of orders to return (default 100, max 1000)
+        offset: Number of orders to skip for pagination
+        symbol: Filter by trading symbol (e.g., 'ETHUSDT')
+        status: Filter by status (PLACED, FAILED, REJECTED)
+        side: Filter by side (BUY, SELL)
+
+    Returns:
+        Dictionary with orders list and metadata
+    """
+    db = getattr(request.app.state, "db", None)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    limit = min(max(1, limit), 1000)
+    offset = max(0, offset)
+
+    orders = db.get_orders(limit=limit, offset=offset, symbol=symbol, status=status, side=side)
+    return {
+        "status": "ok",
+        "count": len(orders),
+        "limit": limit,
+        "offset": offset,
+        "orders": orders,
+    }
+
+
+@history_router.get(
+    "/history/failures",
+    summary="Get order failure logs",
+)
+async def get_failures_history(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    error_type: Optional[str] = None,
+) -> dict:
+    """Retrieve order failure logs from database.
+
+    Args:
+        limit: Maximum number of failures to return (default 100, max 1000)
+        offset: Number of failures to skip for pagination
+        error_type: Filter by error type
+
+    Returns:
+        Dictionary with failures list and metadata
+    """
+    db = getattr(request.app.state, "db", None)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    limit = min(max(1, limit), 1000)
+    offset = max(0, offset)
+
+    failures = db.get_failures(limit=limit, offset=offset, error_type=error_type)
+    return {
+        "status": "ok",
+        "count": len(failures),
+        "limit": limit,
+        "offset": offset,
+        "failures": failures,
+    }
+
+
+@history_router.get(
+    "/history/order/{request_id}",
+    summary="Get order details by request ID",
+)
+async def get_order_details(
+    request: Request,
+    request_id: str,
+) -> dict:
+    """Get detailed order information and associated failures.
+
+    Args:
+        request_id: Unique request identifier
+
+    Returns:
+        Dictionary with order details and failure logs
+    """
+    db = getattr(request.app.state, "db", None)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    order = db.get_order_by_request_id(request_id)
+    if not order:
+        raise HTTPException(status_code=404, detail=f"Order not found: {request_id}")
+
+    failures = db.get_failures_by_order_id(order["id"]) if order.get("id") else []
+
+    return {
+        "status": "ok",
+        "order": order,
+        "failures": failures,
+    }
+
+
+@history_router.get(
+    "/history/stats",
+    summary="Get order statistics",
+)
+async def get_statistics(request: Request) -> dict:
+    """Get summary statistics about orders and failures.
+
+    Returns:
+        Dictionary with various statistics
+    """
+    db = getattr(request.app.state, "db", None)
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    stats = db.get_statistics()
+    return {
+        "status": "ok",
+        "statistics": stats,
+    }
