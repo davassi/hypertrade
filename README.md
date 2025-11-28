@@ -16,8 +16,6 @@
 
 It validates webhook payloads, enforces secret auth and IP whitelisting, and emits audit logs. Use it as a reliable layer between **TradingView strategies** and your **Hyperliquid sub-accounts**.
 
-[![Telegram](https://img.shields.io/badge/Telegram-join-2CA5E0?logo=telegram&logoColor=white)](https://t.me/+VvE0QlK83l00Njc0)
-
 ## Features
 - TradingView‑compatible payloads with validation.
 - IP whitelisting.
