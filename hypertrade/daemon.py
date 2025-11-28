@@ -17,9 +17,10 @@ from .middleware.logging import LoggingMiddleware
 from .middleware.content_limit import ContentLengthLimitMiddleware
 from .middleware.rate_limit import RateLimitMiddleware
 from .routes.health import router as health_router
-from .routes.webhooks import router as webhooks_router
+from .routes.webhooks import router as webhooks_router, history_router
 from .notify import send_telegram_message
 from .exception_handlers import register_exception_handlers
+from .database import OrderDatabase
 
 log = logging.getLogger("uvicorn.error")
 
@@ -121,6 +122,19 @@ def create_daemon() -> FastAPI:
     else:
         app.state.telegram_notify = None
 
+    # Initialize database if enabled
+    if getattr(settings, "db_enabled", True):
+        try:
+            db = OrderDatabase(settings.db_path)
+            app.state.db = db
+            log.info("Order database initialized at: %s", settings.db_path)
+        except Exception as e:
+            log.error("Failed to initialize database: %s", e)
+            raise
+    else:
+        app.state.db = None
+        log.info("Database persistence disabled")
+
     # Finalize logging with configured level and add middleware
     app.add_middleware(LoggingMiddleware)
     app.add_middleware(
@@ -163,6 +177,7 @@ def create_daemon() -> FastAPI:
     # Setting the Routers up
     app.include_router(health_router)
     app.include_router(webhooks_router)
+    app.include_router(history_router)
 
     # Log endpoints after routes are registered
     log_endpoints(app)

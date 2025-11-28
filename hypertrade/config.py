@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
 
+    # Database persistence
+    db_path: str = "./hypertrade.db"
+    db_enabled: bool = True
+
     # ── Validators ────────────────────────────────────────────────────────────
     @field_validator("master_addr")
     @classmethod
