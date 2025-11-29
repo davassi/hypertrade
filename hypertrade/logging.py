@@ -36,8 +36,8 @@ def log_startup_banner(
     trust_xff: bool = True,
     version: str = "1.0.0",  # pass __version__ or from importlib.metadata
 ) -> None:
-    """Log the startup banner with configuration details."""   
-    url = f"http://{host}:{port}"
+    """Log the startup banner with configuration details."""
+    url = f"http://{host}:{port}" if port else f"http://{host}:<port from HYPERTRADE_LISTEN_PORT>"
     ip_count = len(set(str(ip) for ip in whitelist_ips if ip))
 
     # Hypertrade ASCII art (compact + readable)

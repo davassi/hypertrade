@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     app_name: str = "Hypertrade Daemon"
     environment: str = "local"
     listen_host: str = "0.0.0.0"
-    listen_port: int = 6487
+    listen_port: Optional[int] = None
 
     model_config = SettingsConfigDict(
         env_prefix="HYPERTRADE_",
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     telegram_chat_id: Optional[str] = None
 
     # Database persistence
-    db_path: str = "./hypertrade.db"
+    db_path: str = "./hypertrade_local.db"
     db_enabled: bool = True
 
     # ── Validators ────────────────────────────────────────────────────────────
