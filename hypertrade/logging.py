@@ -13,6 +13,23 @@ from .version import __version__
 # Use uvicorn.error logger (guaranteed to exist + colored in dev)
 log = pylog.getLogger("uvicorn.error")
 
+
+def configure_logging(log_level: str = "INFO") -> None:
+    """Configure Python logging to use the specified level."""
+    level = log_level.upper()
+    valid_levels = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
+
+    if level not in valid_levels:
+        level = "INFO"
+
+    # Configure uvicorn loggers
+    pylog.getLogger("uvicorn").setLevel(level)
+    pylog.getLogger("uvicorn.access").setLevel(level)
+    pylog.getLogger("uvicorn.error").setLevel(level)
+
+    # Configure app logger
+    pylog.getLogger("hypertrade").setLevel(level)
+
 # pylint: disable=too-few-public-methods
 class _MessageFilter(pylog.Filter):
     def __init__(self, *, deny_contains: Optional[List[str]] = None):

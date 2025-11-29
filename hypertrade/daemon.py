@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import get_settings
-from .logging import log_startup_banner, log_endpoints
+from .logging import log_startup_banner, log_endpoints, configure_logging
 from .middleware.logging import LoggingMiddleware
 from .middleware.content_limit import ContentLengthLimitMiddleware
 from .middleware.rate_limit import RateLimitMiddleware
@@ -103,6 +103,9 @@ def create_daemon() -> FastAPI:
         settings = get_settings()
     except ValidationError:
         _please_die_gracefully()
+
+    # Configure logging based on settings
+    configure_logging(settings.log_level)
 
     app.state.settings = settings
 
