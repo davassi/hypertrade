@@ -178,6 +178,10 @@ def create_daemon() -> FastAPI:
         settings.api_url,
     )
 
+    # Log webhook secret status
+    webhook_secret_status = "ENABLED" if settings.webhook_secret else "DISABLED"
+    log.info("Webhook secret: %s", webhook_secret_status)
+
     # Showing our startup banner
     log_startup_banner(
         host=settings.listen_host,
