@@ -171,6 +171,13 @@ def create_daemon() -> FastAPI:
     )
     log.info("Loaded %d TV webhook IPs", len(settings.tv_webhook_ips or []))
 
+    # Log Hyperliquid environment and endpoint
+    log.info(
+        "Hyperliquid API: environment=%s endpoint=%s",
+        settings.environment.upper(),
+        settings.api_url,
+    )
+
     # Showing our startup banner
     log_startup_banner(
         host=settings.listen_host,
