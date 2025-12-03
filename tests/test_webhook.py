@@ -97,6 +97,7 @@ class StubHyperliquidService:
 def make_app(monkeypatch, *, secret: str | None = None):
     """Create app with env configured via pytest monkeypatch."""
     # Required env vars for settings
+    monkeypatch.setenv("HYPERTRADE_ENVIRONMENT", "test")
     monkeypatch.setenv("HYPERTRADE_MASTER_ADDR", "0xMASTER")
     monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "dummy-priv-key")
     monkeypatch.setenv("HYPERTRADE_SUBACCOUNT_ADDR", "0xSUB")

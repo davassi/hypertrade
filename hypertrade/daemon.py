@@ -31,11 +31,12 @@ def _please_die_gracefully() -> None:
     banner = (
         "\n"
         "╔" + "═" * 72 + "╗\n"
-        "║  ⚠️   HYPERTRADE DAEMON CANNOT START – MISSING SECRETS   ⚠️              ║\n"
+        "║  ⚠️   HYPERTRADE DAEMON CANNOT START – MISSING CONFIGURATION   ⚠️        ║\n"
         "╚" + "═" * 72 + "╝\n"
         "\n"
         "Required environment variables are not set:\n"
         "\n"
+        "    • HYPERTRADE_ENVIRONMENT      → 'prod' or 'test' (Hyperliquid endpoint)\n"
         "    • HYPERTRADE_MASTER_ADDR      → your Hyperliquid master address\n"
         "    • HYPERTRADE_API_WALLET_PRIV  → 64-char hex private key (with or without 0x)\n"
         "    • HYPERTRADE_SUBACCOUNT_ADDR  → your sub-account address (optional)\n"
@@ -162,7 +163,8 @@ def create_daemon() -> FastAPI:
         )
     register_exception_handlers(app)
     log.info(
-        "App started env=%s whitelist_enabled=%s log_level=%s",
+        "App started app_env=%s hl_env=%s whitelist_enabled=%s log_level=%s",
+        settings.app_environment,
         settings.environment,
         settings.ip_whitelist_enabled,
         settings.log_level,

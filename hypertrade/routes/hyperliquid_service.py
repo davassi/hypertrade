@@ -1,6 +1,5 @@
 """Lightweight Hyperliquid client abstraction used by webhook processing."""
 
-import os
 import logging
 import json
 
@@ -8,6 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
 
+from hypertrade.config import get_settings
 from .tradingview_enums import Side, SignalType
 from .hyperliquid_execution_client import HyperliquidExecutionClient, PositionSide
 
@@ -69,7 +69,11 @@ class HyperliquidService:
         api_wallet_priv: Optional[str] = None,
         subaccount_addr: Optional[str] = None,
     ):
-        self.base_url = base_url or os.getenv("HL_BASE_URL", "https://api.hyperliquid.xyz")
+        if base_url is None:
+            settings = get_settings()
+            self.base_url = settings.api_url
+        else:
+            self.base_url = base_url
         self.subaccount_addr = subaccount_addr
 
         log.debug(

@@ -12,7 +12,8 @@ class Settings(BaseSettings):
 
     # ── Core ─────────────────────────────────────
     app_name: str = "Hypertrade Daemon"
-    environment: str = "local"
+    app_environment: str = "local"
+    environment: str  # REQUIRED: must be "prod" or "test" (Hyperliquid API endpoint)
     listen_host: str = "0.0.0.0"
     listen_port: Optional[int] = None
 
@@ -30,7 +31,19 @@ class Settings(BaseSettings):
     subaccount_addr: Optional[str] = None  # allowing None to enable trading on master account
 
     # ── Security & Networking ─────────────────────────────────────────────────
-    api_url : str = "https://api.hyperliquid.xyz"
+    @property
+    def api_url(self) -> str:
+        """Derive api_url from HYPERTRADE_ENVIRONMENT."""
+        if self.environment == "prod":
+            return "https://api.hyperliquid.xyz"
+        elif self.environment == "test":
+            return "https://api.hyperliquid-testnet.xyz"
+        else:
+            raise ValueError(
+                f"Invalid HYPERTRADE_ENVIRONMENT='{self.environment}'. "
+                "Must be 'prod' or 'test'."
+            )
+            
     ip_whitelist_enabled: bool = False
     trust_forwarded_for: bool = True
 
@@ -77,6 +90,14 @@ class Settings(BaseSettings):
     db_enabled: bool = True
 
     # ── Validators ────────────────────────────────────────────────────────────
+    @field_validator("environment")
+    @classmethod
+    def _validate_hyperliquid_environment(cls, value: str) -> str:
+        value = (value or "").strip().lower()
+        if value not in {"prod", "test"}:
+            raise ValueError("must be 'prod' or 'test'")
+        return value
+
     @field_validator("master_addr")
     @classmethod
     def _not_blank(cls, value: str) -> str:

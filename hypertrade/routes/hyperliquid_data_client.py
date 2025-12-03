@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any, Dict, Tuple, Optional
 
 import requests
+from hypertrade.config import get_settings
 
 log = logging.getLogger("uvicorn.error")
 
@@ -18,11 +18,16 @@ class HyperliquidDataClient:
     def __init__(
         self,
         account_address: Optional[str] = None,
-        base_url: str = "https://api.hyperliquid.xyz",
+        base_url: Optional[str] = None,
     ):
         """Create the client with optional account and base URL overrides."""
+        settings = get_settings()
+
+        if base_url is None:
+            base_url = settings.api_url
+
         self.info_url = base_url.rstrip("/") + "/info"
-        self.account_address = account_address or os.environ.get("HYPERTRADE_MASTER_ADDR")
+        self.account_address = account_address or settings.master_addr
 
         log.debug("HyperliquidDataClient initialized | Base URL: %s", self.info_url)
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 import logging
 from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
@@ -9,6 +8,7 @@ from typing import Literal, Any, Dict, Optional, Tuple
 
 from eth_account import Account
 from hyperliquid.exchange import Exchange
+from hypertrade.config import get_settings
 from .hyperliquid_data_client import HyperliquidDataClient
 
 log = logging.getLogger("uvicorn.error")
@@ -46,12 +46,16 @@ class HyperliquidExecutionClient:
         private_key: str,
         account_address: Optional[str] = None,
         vault_address: Optional[str] = None,
-        base_url: str = "https://api.hyperliquid.xyz",
+        base_url: Optional[str] = None,
         default_premium_bps: float = 5.0,
     ):
         if not private_key:
             raise ValueError("private_key must be provided")
-        
+
+        if base_url is None:
+            settings = get_settings()
+            base_url = settings.api_url
+
         pk = private_key if private_key.startswith("0x") else f"0x{private_key}"
         wallet = Account.from_key(pk)
         

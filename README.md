@@ -74,11 +74,24 @@ python -m hypertrade
 
 Hypertrade won't start unless these variables are set:
 
-- `HYPERTRADE_MASTER_ADDR`
-- `HYPERTRADE_API_WALLET_PRIV`
-- `HYPERTRADE_SUBACCOUNT_ADDR`
+- `HYPERTRADE_ENVIRONMENT` – The Hyperliquid environment to connect to. Must be `prod` or `test`.
+- `HYPERTRADE_MASTER_ADDR` – Your master wallet address.
+- `HYPERTRADE_API_WALLET_PRIV` – Your private key for API access.
+- `HYPERTRADE_SUBACCOUNT_ADDR` – (Optional) Your Hyperliquid sub-account address.
+
+### API Endpoint Selection
+
+The `HYPERTRADE_ENVIRONMENT` variable controls which Hyperliquid endpoint is used:
+
+- `HYPERTRADE_ENVIRONMENT=prod` → `https://api.hyperliquid.xyz` (mainnet)
+- `HYPERTRADE_ENVIRONMENT=test` → `https://api.hyperliquid-testnet.xyz` (testnet)
+
+Any other value will cause the application to fail at startup with a clear error message.
+
+### Example Setup
 
 ```bash
+export HYPERTRADE_ENVIRONMENT=prod
 export HYPERTRADE_MASTER_ADDR=0xYourMasterAddress
 export HYPERTRADE_API_WALLET_PRIV='your-private-key'
 export HYPERTRADE_SUBACCOUNT_ADDR=0xYourSubaccountAddress
@@ -91,6 +104,7 @@ Personally I prefer storing secrets with Password Store (pass) instead of a `.en
 - Example exports pulling from pass:
 
 ```bash
+export HYPERTRADE_ENVIRONMENT=prod
 export HYPERTRADE_MASTER_ADDR="$(pass show hypertrade/master_addr)"
 export HYPERTRADE_API_WALLET_PRIV="$(pass show hypertrade/api_wallet_priv)"
 export HYPERTRADE_SUBACCOUNT_ADDR="$(pass show hypertrade/subaccount_addr)"
