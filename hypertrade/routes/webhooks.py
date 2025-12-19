@@ -1,6 +1,5 @@
 """TradingView webhook endpoint: validate, parse and respond."""
 
-import os
 import logging
 import hmac
 import time
@@ -525,14 +524,6 @@ def _format_telegram_message(
     if req_id:
         lines.append(f"ReqID: {req_id}")
     return "\n".join(lines)
-
-def require_env(var_name: str) -> str:
-    """Raise an exception if env var missing."""
-    value = os.getenv(var_name)
-    if not value:
-        log.info("Missing required environment variable: %s", var_name)
-        raise ValueError(var_name + " must be provided")
-    return value
 
 
 # ═══════════════════════════════════════════════════════════════════════════
