@@ -163,6 +163,10 @@ async def hypertrade_webhook(
         subaccount_addr=vault_address,
     )
     
+    # Determine reduce_only flag based on signal type
+    # REDUCE signals should only reduce existing positions, not open new ones
+    reduce_only = signal in {SignalType.REDUCE_LONG, SignalType.REDUCE_SHORT}
+
     # Execute plugging into Hyperliquid SDK.
     order_request = OrderRequest(
         symbol=symbol,
@@ -170,7 +174,7 @@ async def hypertrade_webhook(
         signal=signal,
         qty=contracts,
         price=price,
-        reduce_only=False,
+        reduce_only=reduce_only,
         post_only=False,
         client_id=None,
         leverage=leverage,

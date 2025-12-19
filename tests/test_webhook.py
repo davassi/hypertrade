@@ -519,3 +519,87 @@ def test_order_response_contains_all_fields(monkeypatch):
     ]
     for field in required_fields:
         assert field in data, f"Missing field: {field}"
+
+
+def test_reduce_long_sets_reduce_only_true(monkeypatch):
+    """Test that REDUCE_LONG signal sets reduce_only=True to prevent opening new positions."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["market"]["previous_position"] = "long"
+    payload["market"]["position"] = "long"
+    payload["order"]["action"] = "sell"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["signal"] == "REDUCE_LONG"
+
+    # Verify reduce_only flag is set to True
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req is not None
+    assert order_req.reduce_only is True, "REDUCE_LONG should have reduce_only=True"
+
+
+def test_reduce_short_sets_reduce_only_true(monkeypatch):
+    """Test that REDUCE_SHORT signal sets reduce_only=True to prevent opening new positions."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["market"]["previous_position"] = "short"
+    payload["market"]["position"] = "short"
+    payload["order"]["action"] = "buy"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["signal"] == "REDUCE_SHORT"
+
+    # Verify reduce_only flag is set to True
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req is not None
+    assert order_req.reduce_only is True, "REDUCE_SHORT should have reduce_only=True"
+
+
+def test_add_long_sets_reduce_only_false(monkeypatch):
+    """Test that ADD_LONG signal keeps reduce_only=False to allow increasing position."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["market"]["previous_position"] = "long"
+    payload["market"]["position"] = "long"
+    payload["order"]["action"] = "buy"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["signal"] == "ADD_LONG"
+
+    # Verify reduce_only flag is False
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req is not None
+    assert order_req.reduce_only is False, "ADD_LONG should have reduce_only=False"
+
+
+def test_open_long_sets_reduce_only_false(monkeypatch):
+    """Test that OPEN_LONG signal keeps reduce_only=False to allow opening new positions."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["market"]["previous_position"] = "flat"
+    payload["market"]["position"] = "long"
+    payload["order"]["action"] = "buy"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["signal"] == "OPEN_LONG"
+
+    # Verify reduce_only flag is False
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req is not None
+    assert order_req.reduce_only is False, "OPEN_LONG should have reduce_only=False"
