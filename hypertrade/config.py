@@ -3,7 +3,7 @@
 import json
 from functools import lru_cache
 from typing import List, Optional
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -140,6 +140,26 @@ class Settings(BaseSettings):
                     pass
             return [part.strip() for part in text.split(",") if part.strip()]
         return value
+
+    @model_validator(mode="after")
+    def _validate_webhook_authentication(self):
+        """Ensure at least one authentication method is enabled for webhook endpoint.
+
+        Either webhook_secret OR ip_whitelist_enabled must be configured to prevent
+        unauthorized trading commands from being accepted.
+        """
+        has_secret = self.webhook_secret is not None and bool(self.webhook_secret.get_secret_value().strip())
+        has_ip_whitelist = self.ip_whitelist_enabled
+
+        if not has_secret and not has_ip_whitelist:
+            raise ValueError(
+                "Webhook authentication required! Must enable at least one of:\n"
+                "  • HYPERTRADE_WEBHOOK_SECRET (shared secret authentication)\n"
+                "  • HYPERTRADE_IP_WHITELIST_ENABLED=true (IP whitelist authentication)\n"
+                "Without authentication, anyone can send trading commands to your account."
+            )
+
+        return self
 
 # Cached settings instance
 @lru_cache(maxsize=1)

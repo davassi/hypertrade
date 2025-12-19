@@ -40,13 +40,19 @@ def _please_die_gracefully() -> None:
         "    • HYPERTRADE_MASTER_ADDR      → your Hyperliquid master address\n"
         "    • HYPERTRADE_API_WALLET_PRIV  → 64-char hex private key (with or without 0x)\n"
         "    • HYPERTRADE_SUBACCOUNT_ADDR  → your sub-account address (optional)\n"
+        "\n"
+        "Required authentication (at least one):\n"
+        "\n"
+        "    • HYPERTRADE_WEBHOOK_SECRET   → shared secret for webhook authentication\n"
+        "      OR\n"
+        "    • HYPERTRADE_IP_WHITELIST_ENABLED=true → enable IP whitelist authentication\n"
         "\n\n"
 
         "The daemon will start automatically once these are set.\n"
     )
 
     log.info(banner)
-    log.critical("Hypertrade startup aborted: missing required secrets")
+    log.critical("Hypertrade startup aborted: missing required configuration")
     _stop_parent_supervisor()
     sys.exit(1)
 

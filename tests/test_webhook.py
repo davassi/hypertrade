@@ -95,15 +95,29 @@ class StubHyperliquidService:
 
 
 def make_app(monkeypatch, *, secret: str | None = None):
-    """Create app with env configured via pytest monkeypatch."""
+    """Create app with env configured via pytest monkeypatch.
+
+    Args:
+        secret: Webhook secret to use. If None, uses default "secret" (matching BASE_PAYLOAD).
+                Use empty string "" to enable IP whitelist instead.
+    """
     # Required env vars for settings
     monkeypatch.setenv("HYPERTRADE_ENVIRONMENT", "test")
     monkeypatch.setenv("HYPERTRADE_MASTER_ADDR", "0xMASTER")
     monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "dummy-priv-key")
     monkeypatch.setenv("HYPERTRADE_SUBACCOUNT_ADDR", "0xSUB")
     monkeypatch.setenv("PRIVATE_KEY", "0x" + "1" * 64)
-    if secret is not None:
+
+    # Ensure at least one authentication method is enabled
+    if secret == "":
+        # Empty string means: use IP whitelist instead of secret
+        monkeypatch.setenv("HYPERTRADE_IP_WHITELIST_ENABLED", "true")
+    elif secret is not None:
+        # Explicit secret provided
         monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", secret)
+    else:
+        # Default: use "secret" to match BASE_PAYLOAD and satisfy authentication requirement
+        monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", "secret")
 
     # Ensure this repo's package is first on sys.path to avoid name collisions
     repo_root = str(pathlib.Path(__file__).resolve().parents[1])
