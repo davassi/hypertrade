@@ -8,6 +8,7 @@ from __future__ import annotations
 
 # pylint: disable=import-outside-toplevel
 
+import os
 import sys
 import pathlib
 import json
@@ -109,15 +110,24 @@ def make_app(monkeypatch, *, secret: str | None = None):
     monkeypatch.setenv("PRIVATE_KEY", "0x" + "1" * 64)
 
     # Ensure at least one authentication method is enabled
+    # Check if IP whitelist was already explicitly enabled
+    ip_whitelist_already_set = os.getenv("HYPERTRADE_IP_WHITELIST_ENABLED", "").lower() == "true"
+
     if secret == "":
         # Empty string means: use IP whitelist instead of secret
         monkeypatch.setenv("HYPERTRADE_IP_WHITELIST_ENABLED", "true")
     elif secret is not None:
         # Explicit secret provided
         monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", secret)
+        # Only disable IP whitelist if it wasn't explicitly enabled
+        if not ip_whitelist_already_set:
+            monkeypatch.setenv("HYPERTRADE_IP_WHITELIST_ENABLED", "false")
     else:
         # Default: use "secret" to match BASE_PAYLOAD and satisfy authentication requirement
-        monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", "secret")
+        # But only if IP whitelist wasn't already enabled (for IP whitelist tests)
+        if not ip_whitelist_already_set:
+            monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", "secret")
+            monkeypatch.setenv("HYPERTRADE_IP_WHITELIST_ENABLED", "false")
 
     # Ensure this repo's package is first on sys.path to avoid name collisions
     repo_root = str(pathlib.Path(__file__).resolve().parents[1])

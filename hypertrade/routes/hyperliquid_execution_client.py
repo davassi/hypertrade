@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 import logging
 from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
@@ -70,12 +69,13 @@ class HyperliquidExecutionClient:
             account_address=account_address,
         )
         self.data = HyperliquidDataClient(account_address=account_address, base_url=base_url)
-        self.default_premium_bps = float(os.environ.get("PREMIUM_BPS", default_premium_bps))
+        self.default_premium_bps = float(default_premium_bps)
 
         log.debug(
-            "Initialized HyperliquidExecutionClient | Wallet: %s | Vault: %s",
+            "Initialized HyperliquidExecutionClient | Wallet: %s | Vault: %s | Premium: %.1f bps",
             wallet.address,
             vault_address or "None",
+            self.default_premium_bps,
         )
 
     # ===================================================================

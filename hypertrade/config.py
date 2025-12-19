@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     rate_limit_only_paths: List[str] = []
     rate_limit_exclude_paths: List[str] = ["/health"]
 
+    # Market order execution premium (basis points)
+    # Controls how aggressively orders cross the spread for IOC fills
+    # Lower = less slippage cost, but may fail to fill in volatile markets
+    # Higher = better fill rate, but higher execution cost
+    # Recommended range: 30-60 bps for liquid assets, 60-100 for illiquid
+    market_order_premium_bps: int = 40
+
     # Optional webhook secret; if set, incoming payloads must include
     # `general.secret` matching this value
     webhook_secret: Optional[SecretStr] = None
@@ -118,6 +125,16 @@ class Settings(BaseSettings):
         level = (value or "").strip().upper()
         valid = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"}
         return level if level in valid else "INFO"
+
+    @field_validator("market_order_premium_bps")
+    @classmethod
+    def _validate_premium_bps(cls, value: int) -> int:
+        """Ensure premium is within reasonable range (1-500 bps)."""
+        if value < 1:
+            raise ValueError("market_order_premium_bps must be at least 1 bps")
+        if value > 500:
+            raise ValueError("market_order_premium_bps must not exceed 500 bps (5%)")
+        return value
 
     @field_validator(
         "tv_webhook_ips",

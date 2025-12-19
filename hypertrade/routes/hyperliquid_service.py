@@ -158,13 +158,22 @@ class HyperliquidService:
 
         log.info("Executing %s position: symbol=%s size=%s side=%s signal=%s", "CLOSE" if request.signal in {SignalType.CLOSE_LONG, SignalType.CLOSE_SHORT} else "OPEN/ADD", symbol, size, request.side, request.signal)
 
+        # ===================================================================
+        # Execute order with configured premium for aggressive fills
+        # This ensures IOC orders cross the spread and execute immediately.
+        # Premium is configurable via HYPERTRADE_MARKET_ORDER_PREMIUM_BPS
+        # ===================================================================
+        settings = get_settings()
+        premium = settings.market_order_premium_bps
+        log.debug("Using market order premium: %d bps (%.2f%%)", premium, premium / 100.0)
+
         if request.signal in {SignalType.CLOSE_LONG, SignalType.CLOSE_SHORT}:
             log.debug("Closing position: symbol=%s side=%s size=%s", symbol, request.signal, size)
             res = self.client.close_position(
                 symbol=symbol,
                 side=_signal_to_position_side(request.signal),
                 size=size,
-                premium_bps=80,
+                premium_bps=premium,
             )
         else:
             log.debug("Opening/adding position: symbol=%s side=%s size=%s", symbol, request.side, size)
@@ -172,7 +181,7 @@ class HyperliquidService:
                 symbol=symbol,
                 side=_to_position_side(request.side),
                 size=size,
-                premium_bps=80,   # 0.8% extra aggression – adjust 50–200 bps as needed
+                premium_bps=premium,
             )
         
         # Safe printing – handle both filled and error cases
