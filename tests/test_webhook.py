@@ -223,6 +223,7 @@ def test_webhook_ip_whitelist_allows_forwarded(monkeypatch):
     # Enable whitelist and set allowed IPs
     monkeypatch.setenv("HYPERTRADE_IP_WHITELIST_ENABLED", "true")
     monkeypatch.setenv("HYPERTRADE_TV_WEBHOOK_IPS", '["1.2.3.4","52.32.178.7"]')
+    monkeypatch.setenv("HYPERTRADE_TRUST_FORWARDED_FOR", "true")
 
     app = make_app(monkeypatch, secret=None)  # no secret enforcement
     client = TestClient(app)
@@ -239,6 +240,7 @@ def test_webhook_ip_whitelist_blocks_forwarded(monkeypatch):
     # Enable whitelist and set allowed IPs (not including 9.9.9.9)
     monkeypatch.setenv("HYPERTRADE_IP_WHITELIST_ENABLED", "true")
     monkeypatch.setenv("HYPERTRADE_TV_WEBHOOK_IPS", '["1.2.3.4","52.32.178.7"]')
+    monkeypatch.setenv("HYPERTRADE_TRUST_FORWARDED_FOR", "true")
 
     app = make_app(monkeypatch, secret=None)  # no secret enforcement
     client = TestClient(app)

@@ -1,5 +1,6 @@
 """TradingView webhook endpoint: validate, parse and respond."""
 
+import asyncio
 import logging
 import hmac
 import time
@@ -34,7 +35,7 @@ router = APIRouter(tags=["webhooks"])
 history_router = APIRouter(tags=["history"])
 log = logging.getLogger("uvicorn.error")
 
-def _place_order_with_retry(client: HyperliquidService, order_request: OrderRequest, max_retries: int = 2) -> dict:
+async def _place_order_with_retry(client: HyperliquidService, order_request: OrderRequest, max_retries: int = 2) -> dict:
     """Attempt to place an order with exponential backoff for transient failures.
 
     Args:
@@ -64,7 +65,7 @@ def _place_order_with_retry(client: HyperliquidService, order_request: OrderRequ
                     "Order placement attempt %d/%d failed, retrying in %ds: %s",
                     attempt + 1, max_retries + 1, wait_time, str(e)
                 )
-                time.sleep(wait_time)
+                await asyncio.sleep(wait_time)
             else:
                 log.error("Order placement failed after %d attempts", max_retries + 1)
                 raise
@@ -199,7 +200,7 @@ async def hypertrade_webhook(
 
     try:
         log.info("Attempting to place order on Hyperliquid: symbol=%s side=%s", symbol, side.value)
-        result = _place_order_with_retry(client, order_request, max_retries=2)
+        result = await _place_order_with_retry(client, order_request, max_retries=2)
     except HyperliquidValidationError as e:
         log.warning("Order validation error: %s", e)
         if db and req_id:
