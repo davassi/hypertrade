@@ -1,6 +1,5 @@
 """Application configuration using Pydantic BaseSettings."""
 
-import json
 from functools import lru_cache
 from typing import List, Optional
 from pydantic import SecretStr, field_validator, model_validator
@@ -47,7 +46,11 @@ class Settings(BaseSettings):
     ip_whitelist_enabled: bool = False
     trust_forwarded_for: bool = True
 
-    # tv_webhook_ips are hardcoded by default, can be overridden in env
+    # List[str] env overrides (tv_webhook_ips, rate_limit_*_paths, trusted_hosts)
+    # MUST be a JSON array, e.g. HYPERTRADE_TV_WEBHOOK_IPS='["1.2.3.4","5.6.7.8"]'.
+    # pydantic-settings' EnvSettingsSource JSON-decodes these before validation;
+    # a comma-separated value raises SettingsError at startup, so do NOT add a
+    # comma-splitting validator expecting it to work for env input.
     tv_webhook_ips: List[str] = [
         "52.89.214.238",
         "34.212.75.30",
@@ -134,28 +137,6 @@ class Settings(BaseSettings):
             raise ValueError("market_order_premium_bps must be at least 1 bps")
         if value > 500:
             raise ValueError("market_order_premium_bps must not exceed 500 bps (5%)")
-        return value
-
-    @field_validator(
-        "tv_webhook_ips",
-        "rate_limit_only_paths",
-        "rate_limit_exclude_paths",
-        "trusted_hosts",
-        mode="before")
-    @classmethod
-    def _parse_path_list(cls, value):
-        if value is None or isinstance(value, list):
-            return value
-        if isinstance(value, str):
-            text = value.strip()
-            if text.startswith("[") and text.endswith("]"):
-                try:
-                    parsed = json.loads(text)
-                    if isinstance(parsed, list):
-                        return [str(x).strip() for x in parsed]
-                except json.JSONDecodeError:
-                    pass
-            return [part.strip() for part in text.split(",") if part.strip()]
         return value
 
     @model_validator(mode="after")
