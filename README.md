@@ -192,7 +192,7 @@ Behavior:
 
 - `HYPERTRADE_MAX_PAYLOAD_BYTES` (default `65536`): reject requests larger than this size with 413.
 - `HYPERTRADE_ENABLE_TRUSTED_HOSTS` (default `false`): enable Trusted Host middleware.
-- `HYPERTRADE_TRUSTED_HOSTS` (default `*`): comma-separated list of allowed hosts when Trusted Host is enabled.
+- `HYPERTRADE_TRUSTED_HOSTS` (default `*`): allowed hosts when Trusted Host is enabled. Provide as a JSON list, e.g. `'["example.com","api.example.com"]'` (comma-separated values are not supported by the loader — see the note under IP Whitelisting).
 - Webhook requires `Content-Type: application/json` and returns 415 otherwise.
 
 ### Telegram Notifications (optional)
