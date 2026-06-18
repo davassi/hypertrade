@@ -188,6 +188,11 @@ Behavior:
 - If `HYPERTRADE_WEBHOOK_SECRET` is set, incoming requests must include `general.secret` matching it, or the request is rejected with 401.
 - If not set, the secret check is skipped.
 
+> 📖 For field-by-field semantics, how the trading signal is derived from the
+> position transition, and ready-to-use example payloads for every signal
+> (`OPEN_LONG`, `CLOSE_LONG`, `ADD_LONG`, `REVERSE_TO_SHORT`, …), see
+> [`docs/tradingview-webhook.md`](docs/tradingview-webhook.md).
+
 ### Additional Security & Limits
 
 - `HYPERTRADE_MAX_PAYLOAD_BYTES` (default `65536`): reject requests larger than this size with 413.
