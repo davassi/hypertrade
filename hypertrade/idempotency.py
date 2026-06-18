@@ -115,7 +115,7 @@ class IdempotencyStore:
                 conn.execute(
                     "UPDATE idempotency_keys "
                     "SET status = 'completed', result_json = ?, completed_at = ? "
-                    "WHERE nonce = ?",
+                    "WHERE nonce = ? AND status = 'in_progress'",
                     (json.dumps(result), _now_iso(), nonce),
                 )
         finally:

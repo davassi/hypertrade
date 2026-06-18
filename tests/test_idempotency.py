@@ -48,3 +48,12 @@ def test_stale_in_progress_is_reclaimed(tmp_path):
     store.reserve("n1", "req1", 60)
     # timeout of 0 makes any prior reservation stale
     assert store.reserve("n1", "req2", 0).outcome is ReserveOutcome.NEW
+
+
+def test_complete_does_not_clobber_completed(tmp_path):
+    store = _store(tmp_path)
+    store.reserve("n1", "r1", 60)
+    store.complete("n1", {"v": "A"})
+    store.complete("n1", {"v": "B"})  # terminal: must be ignored
+    r = store.reserve("n1", "r2", 60)
+    assert r.result == {"v": "A"}
