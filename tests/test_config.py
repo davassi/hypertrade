@@ -105,3 +105,28 @@ def test_tv_webhook_ips_defaults_when_unset(monkeypatch) -> None:
     settings = _make_settings()
 
     assert settings.tv_webhook_ips == DEFAULT_TV_WEBHOOK_IPS
+
+
+def test_idempotency_enabled_defaults_true(monkeypatch) -> None:
+    from hypertrade.config import Settings
+    monkeypatch.setenv("HYPERTRADE_ENVIRONMENT", "test")
+    monkeypatch.setenv("HYPERTRADE_MASTER_ADDR", "0xMASTER")
+    monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "dummy-priv-key")
+    monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", "secret")
+    monkeypatch.delenv("HYPERTRADE_IDEMPOTENCY_ENABLED", raising=False)
+    s = Settings(_env_file=None)
+    assert s.idempotency_enabled is True
+    assert s.idempotency_inflight_timeout == 60
+
+
+def test_idempotency_enabled_requires_db(monkeypatch) -> None:
+    from hypertrade.config import Settings
+    monkeypatch.setenv("HYPERTRADE_ENVIRONMENT", "test")
+    monkeypatch.setenv("HYPERTRADE_MASTER_ADDR", "0xMASTER")
+    monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "dummy-priv-key")
+    monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", "secret")
+    monkeypatch.setenv("HYPERTRADE_IDEMPOTENCY_ENABLED", "true")
+    monkeypatch.setenv("HYPERTRADE_DB_ENABLED", "false")
+    import pytest
+    with pytest.raises(ValueError, match="requires the order DB"):
+        Settings(_env_file=None)
