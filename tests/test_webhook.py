@@ -14,6 +14,8 @@ import pathlib
 import json
 import copy
 
+from decimal import Decimal
+
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch
 
@@ -251,6 +253,72 @@ def test_webhook_ip_whitelist_blocks_forwarded(monkeypatch):
     assert resp.status_code == 403
     body = resp.json()
     assert body["error"]["status"] == 403
+
+
+def test_webhook_preserves_decimal_precision_in_order(monkeypatch):
+    """Order quantity/price must reach the exchange client as exact Decimals.
+
+    The payload model parses contracts/price as Decimal; converting them to
+    float in the handler corrupts precision (Decimal(0.1_float) != Decimal("0.1"))
+    and can mis-size an order or get it rejected by the exchange.
+    """
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["order"]["contracts"] = "0.1"
+    payload["order"]["price"] = "123456789.123456789"
+
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200, resp.text
+
+    captured = StubHyperliquidService.last_order_request
+    assert captured is not None
+    assert isinstance(captured.qty, Decimal)
+    assert isinstance(captured.price, Decimal)
+    assert captured.qty == Decimal("0.1")
+    assert captured.price == Decimal("123456789.123456789")
+
+
+async def test_place_order_runs_off_the_event_loop():
+    """The synchronous place_order must not block the event loop.
+
+    place_order blocks on a threading.Event that only a concurrent coroutine can
+    set. If the call ran directly on the loop, that coroutine could never run and
+    the wait would time out — so a passing test proves the call was offloaded.
+    """
+    import asyncio
+    import threading
+
+    from hypertrade.routes.webhooks import _place_order_with_retry
+    from hypertrade.routes.hyperliquid_service import OrderRequest
+    from hypertrade.routes.tradingview_enums import Side, SignalType
+
+    release = threading.Event()
+    placed = {"value": False}
+
+    class BlockingClient:
+        def place_order(self, req):
+            if not release.wait(timeout=2.0):
+                raise AssertionError("event loop blocked: concurrent coroutine never ran")
+            placed["value"] = True
+            return {"orderId": "x"}
+
+    async def concurrent():
+        await asyncio.sleep(0.05)  # can only run if the loop is free
+        release.set()
+
+    req = OrderRequest(
+        symbol="SOL", side=Side.BUY, signal=SignalType.OPEN_LONG, qty=Decimal("1")
+    )
+    result, _ = await asyncio.gather(
+        _place_order_with_retry(BlockingClient(), req),
+        concurrent(),
+    )
+
+    assert placed["value"] is True
+    assert result == {"orderId": "x"}
 
 
 # ===================================================================

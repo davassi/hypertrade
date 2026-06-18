@@ -53,7 +53,10 @@ async def _place_order_with_retry(client: HyperliquidService, order_request: Ord
     """
     for attempt in range(max_retries + 1):
         try:
-            return client.place_order(order_request)
+            # place_order is synchronous and performs blocking network I/O to
+            # Hyperliquid; run it off the event loop so concurrent requests
+            # (and the health check) are not stalled while an order is in flight.
+            return await asyncio.to_thread(client.place_order, order_request)
         except HyperliquidValidationError:
             # Don't retry validation errors - they're permanent
             log.warning("Order validation failed, not retrying: %s", order_request)
@@ -123,14 +126,14 @@ async def hypertrade_webhook(
         })
     
     symbol = payload.currency.base.upper()
-    try:
-        contracts = float(payload.order.contracts)
-        price = float(payload.order.price)    
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid 'contracts' or 'price' value") from exc
-        
+    # contracts/price are already validated as Decimal by the Pydantic model;
+    # keep them as Decimal so exchange-bound sizing/pricing stays exact (a float
+    # round-trip corrupts precision, e.g. Decimal(0.1_float) != Decimal("0.1")).
+    contracts = payload.order.contracts
+    price = payload.order.price
+
     # Fifth: processing logic here (TODO: would be good to enqueue the job).
-    nominal_quantity = float(contracts * price)
+    nominal_quantity = contracts * price
     
     log.info(
         "Order parameters: direction=%s symbol=%s interval=%s price=%.2f contracts=%s notional_qty=%.2f alert=%s",
