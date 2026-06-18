@@ -4,8 +4,9 @@ import os
 import sqlite3
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 
 log = logging.getLogger("uvicorn.error")
 
@@ -96,8 +97,8 @@ class OrderDatabase:
         symbol: str,
         side: str,
         signal: str,
-        quantity: float,
-        price: float,
+        quantity: Union[float, Decimal],
+        price: Union[float, Decimal],
         status: str,
         leverage: Optional[int] = None,
         subaccount: Optional[str] = None,
@@ -144,8 +145,11 @@ class OrderDatabase:
                 symbol,
                 side,
                 signal,
-                quantity,
-                price,
+                # quantity/price may arrive as Decimal (exact, exchange-bound);
+                # the columns are REAL and sqlite3 cannot bind Decimal directly,
+                # so coerce here — the DB is history/analytics, not the order itself.
+                float(quantity),
+                float(price),
                 leverage,
                 subaccount,
                 status,

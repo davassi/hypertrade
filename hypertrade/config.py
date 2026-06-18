@@ -44,7 +44,9 @@ class Settings(BaseSettings):
             )
             
     ip_whitelist_enabled: bool = False
-    trust_forwarded_for: bool = True
+    # Secure default: do not trust X-Forwarded-For (it is client-spoofable).
+    # Enable only when behind a trusted reverse proxy; see hypertrade/security.py.
+    trust_forwarded_for: bool = False
 
     # List[str] env overrides (tv_webhook_ips, rate_limit_*_paths, trusted_hosts)
     # MUST be a JSON array, e.g. HYPERTRADE_TV_WEBHOOK_IPS='["1.2.3.4","5.6.7.8"]'.

@@ -29,7 +29,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         max_requests: int,
         window_seconds: int,
         burst: int = 0,
-        trust_forwarded_for: bool = True,
+        trust_forwarded_for: bool = False,  # X-Forwarded-For is spoofable; opt in explicitly
         only_paths: Optional[Iterable[str]] = None,
         exclude_paths: Optional[Iterable[str]] = None,
         whitelist_ips: Optional[Iterable[str]] = None,

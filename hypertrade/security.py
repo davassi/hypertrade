@@ -11,15 +11,20 @@ def _extract_client_ip(request: Request, trust_forwarded_for: bool) -> Optional[
     """Return best-effort client IP.
 
     If ``trust_forwarded_for`` is true and an ``X-Forwarded-For`` header is present,
-    use its left-most value. Otherwise, fall back to the socket peer address.
+    use its **right-most** value. Otherwise, fall back to the socket peer address.
+
+    Security: each proxy appends the address it observed to the right of
+    ``X-Forwarded-For``, so the left-most entries are supplied by the client and
+    are spoofable. Only the right-most entry — added by our immediate (trusted)
+    proxy — is trustworthy. This assumes a single trusted proxy hop; enable
+    ``trust_forwarded_for`` only when actually behind such a proxy.
     """
     if trust_forwarded_for:
         xff = request.headers.get("x-forwarded-for")
         if xff:
-            # format: client, proxy1, proxy2 ... take left-most
-            first = xff.split(",")[0].strip()
-            if first:
-                return first
+            parts = [part.strip() for part in xff.split(",") if part.strip()]
+            if parts:
+                return parts[-1]
     if request.client:
         return request.client.host
     return None

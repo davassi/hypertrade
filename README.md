@@ -123,9 +123,18 @@ Enable IP whitelisting for the TradingView webhook endpoint and set allowed IPs:
 export HYPERTRADE_IP_WHITELIST_ENABLED=true
 export 'HYPERTRADE_TV_WEBHOOK_IPS=["52.89.214.238","34.212.75.30","54.218.53.128","52.32.178.7"]'
 
-# If behind a proxy, keep this true so X-Forwarded-For is honored
+# Enable ONLY when behind a trusted reverse proxy. Default is false.
 export HYPERTRADE_TRUST_FORWARDED_FOR=true
 ```
+
+> ⚠️ **Security / breaking change:** `HYPERTRADE_TRUST_FORWARDED_FOR` now defaults
+> to **`false`** (previously `true`). `X-Forwarded-For` is client-supplied and
+> therefore spoofable — a request could otherwise claim a whitelisted IP and
+> bypass the whitelist. When enabled, only the **right-most** `X-Forwarded-For`
+> entry (the address added by your immediate trusted proxy) is used; this assumes
+> a single proxy hop. **If you run behind a reverse proxy and rely on the IP
+> whitelist, you must now set `HYPERTRADE_TRUST_FORWARDED_FOR=true` explicitly**,
+> or every request will be seen as coming from the proxy and rejected.
 
 You can apply the whitelist dependency to other routes using `require_ip_whitelisted()` from `hypertrade/security.py`.
 
