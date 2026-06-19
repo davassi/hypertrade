@@ -166,8 +166,8 @@ result without re-placing the order.
 
 | Situation | HTTP status | Response body |
 | --- | --- | --- |
-| `general.nonce` absent and idempotency enabled | `400` | validation error |
-| Duplicate nonce — first request still in flight | `409` | `{"status": "duplicate_inflight", ...}` |
+| `general.nonce` absent and idempotency enabled | `400` | `{"error": {"status": 400, "detail": "general.nonce is required"}}` |
+| Duplicate nonce — first request still in flight | `409` | `{"error": {"status": 409, "detail": "Duplicate request in flight"}}` |
 | Duplicate nonce — order already completed | `200` | `{"status": "duplicate", ...}` |
 | New nonce (normal path) | `200` | `{"status": "ok", ...}` |
 
