@@ -121,7 +121,12 @@ def pass_insert(key: str, value: str, *, runner=subprocess.run) -> None:
 def collect(reader=None) -> dict:
     """Prompt for the minimum config (only what is unset) and return it."""
     env = {k: os.environ.get(k, "") for k in REQUIRED_KEYS}
-    environment = env["HYPERTRADE_ENVIRONMENT"] or prompt_until_valid(
+    env_environment = env["HYPERTRADE_ENVIRONMENT"].strip().lower()
+    if env_environment and not validate_environment(env_environment):
+        raise SystemExit(
+            f"Invalid HYPERTRADE_ENVIRONMENT={env['HYPERTRADE_ENVIRONMENT']!r}; expected 'prod' or 'test'."
+        )
+    environment = env_environment or prompt_until_valid(
         "Environment (prod/test): ", validate_environment, reader=reader)
     master = env["HYPERTRADE_MASTER_ADDR"] or prompt_until_valid(
         "Master address (0x...): ", validate_address, reader=reader)
@@ -149,9 +154,15 @@ def collect(reader=None) -> dict:
         secrets["HYPERTRADE_WEBHOOK_SECRET"] = secret
     else:
         env_values["HYPERTRADE_IP_WHITELIST_ENABLED"] = "true"
-        ips = prompt_until_valid(
-            "First allowed IPv4: ", validate_ipv4, reader=reader)
-        env_values["HYPERTRADE_TV_WEBHOOK_IPS"] = f'["{ips}"]'
+        ips = [prompt_until_valid("Allowed IPv4: ", validate_ipv4, reader=reader)]
+        while True:
+            more = prompt_until_valid(
+                "Another allowed IPv4 (Enter to finish): ",
+                validate_ipv4, allow_empty=True, reader=reader)
+            if not more:
+                break
+            ips.append(more)
+        env_values["HYPERTRADE_TV_WEBHOOK_IPS"] = "[" + ",".join(f'"{ip}"' for ip in ips) + "]"
 
     return {
         "environment": environment, "master_addr": master,

@@ -163,3 +163,30 @@ def test_persist_uses_pass_when_available(tmp_path, monkeypatch):
     inserted_keys = [a[-1] for a in calls]
     assert "hypertrade/master_addr" in inserted_keys
     assert "hypertrade/api_wallet_priv" in inserted_keys
+
+
+def test_collect_normalizes_env_environment(monkeypatch):
+    monkeypatch.setenv("HYPERTRADE_ENVIRONMENT", "PROD ")
+    monkeypatch.setenv("HYPERTRADE_MASTER_ADDR", "0x" + "a" * 40)
+    monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "b" * 64)
+    # reader: subaccount skip, auth=secret, secret value
+    result = setup.collect(reader=_Reader(["", "s", "shh"]))
+    assert result["environment"] == "prod"
+
+
+def test_collect_rejects_invalid_env_environment(monkeypatch):
+    import pytest
+    monkeypatch.setenv("HYPERTRADE_ENVIRONMENT", "staging")
+    monkeypatch.setenv("HYPERTRADE_MASTER_ADDR", "0x" + "a" * 40)
+    monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "b" * 64)
+    with pytest.raises(SystemExit):
+        setup.collect(reader=_Reader([""]))
+
+
+def test_collect_whitelist_accepts_multiple_ips(monkeypatch):
+    monkeypatch.setenv("HYPERTRADE_ENVIRONMENT", "test")
+    monkeypatch.setenv("HYPERTRADE_MASTER_ADDR", "0x" + "a" * 40)
+    monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "b" * 64)
+    # reader: subaccount skip, auth=whitelist, ip1, ip2, blank to finish
+    result = setup.collect(reader=_Reader(["", "w", "1.2.3.4", "5.6.7.8", ""]))
+    assert result["env_values"]["HYPERTRADE_TV_WEBHOOK_IPS"] == '["1.2.3.4","5.6.7.8"]'
