@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     db_path: str = "./hypertrade_local.db"
     db_enabled: bool = True
 
+    # Cap orders/failures history tables to the most recent N rows (trim-on-insert)
+    max_history_rows: int = 200
+
     # Idempotency (at-most-once order placement keyed on general.nonce)
     idempotency_enabled: bool = True
     idempotency_inflight_timeout: int = 60  # seconds before an in_progress reservation is reclaimable
@@ -143,6 +146,14 @@ class Settings(BaseSettings):
             raise ValueError("market_order_premium_bps must be at least 1 bps")
         if value > 500:
             raise ValueError("market_order_premium_bps must not exceed 500 bps (5%)")
+        return value
+
+    @field_validator("max_history_rows")
+    @classmethod
+    def _validate_max_history_rows(cls, value: int) -> int:
+        """Must keep at least one row; <= 0 would delete everything on insert."""
+        if value < 1:
+            raise ValueError("max_history_rows must be at least 1")
         return value
 
     @model_validator(mode="after")

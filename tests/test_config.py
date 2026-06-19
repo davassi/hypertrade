@@ -130,3 +130,25 @@ def test_idempotency_enabled_requires_db(monkeypatch) -> None:
     import pytest
     with pytest.raises(ValueError, match="requires the order DB"):
         Settings(_env_file=None)
+
+
+def test_max_history_rows_defaults_to_200(monkeypatch) -> None:
+    from hypertrade.config import Settings
+    monkeypatch.setenv("HYPERTRADE_ENVIRONMENT", "test")
+    monkeypatch.setenv("HYPERTRADE_MASTER_ADDR", "0xMASTER")
+    monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "dummy-priv-key")
+    monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", "secret")
+    monkeypatch.delenv("HYPERTRADE_MAX_HISTORY_ROWS", raising=False)
+    assert Settings(_env_file=None).max_history_rows == 200
+
+
+def test_max_history_rows_must_be_positive(monkeypatch) -> None:
+    import pytest
+    from hypertrade.config import Settings
+    monkeypatch.setenv("HYPERTRADE_ENVIRONMENT", "test")
+    monkeypatch.setenv("HYPERTRADE_MASTER_ADDR", "0xMASTER")
+    monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "dummy-priv-key")
+    monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", "secret")
+    monkeypatch.setenv("HYPERTRADE_MAX_HISTORY_ROWS", "0")
+    with pytest.raises(ValueError, match="max_history_rows"):
+        Settings(_env_file=None)
