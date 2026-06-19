@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import hmac
+import sqlite3
 import time
 import json
 
@@ -208,9 +209,15 @@ async def hypertrade_webhook(
     db = getattr(request.app.state, "db", None)
 
     if idempotency is not None:
-        reservation = idempotency.reserve(
-            nonce, req_id, get_settings().idempotency_inflight_timeout
-        )
+        try:
+            reservation = idempotency.reserve(
+                nonce, req_id, get_settings().idempotency_inflight_timeout
+            )
+        except sqlite3.Error as exc:
+            log.warning("Idempotency store unavailable during reserve: %s", exc)
+            raise HTTPException(
+                status_code=503, detail="Idempotency store unavailable"
+            ) from exc
         if reservation.outcome is ReserveOutcome.DUPLICATE_COMPLETED:
             return JSONResponse({**(reservation.result or {}), "status": "duplicate"})
         if reservation.outcome is ReserveOutcome.IN_FLIGHT:
@@ -295,7 +302,11 @@ async def hypertrade_webhook(
         raise HTTPException(status_code=502, detail=f"Exchange error: {e}") from e
     finally:
         if idempotency is not None and not placed_ok:
-            idempotency.release(nonce)
+            try:
+                idempotency.release(nonce)
+            except sqlite3.Error as exc:
+                # Best-effort: a release failure must not mask the original placement exception.
+                log.warning("Idempotency store unavailable during release (nonce=%s): %s", nonce, exc)
 
     log.info("Order placed successfully: %s", result)
 
@@ -323,7 +334,11 @@ async def hypertrade_webhook(
 
     if idempotency is not None:
         # complete() persists the plain dict body for replay; _build_response must return a dict (not a Response object).
-        idempotency.complete(nonce, response)
+        # Best-effort: a failed complete leaves the nonce in_progress to be reclaimed after the in-flight timeout.
+        try:
+            idempotency.complete(nonce, response)
+        except sqlite3.Error as exc:
+            log.warning("Idempotency store unavailable during complete (nonce=%s): %s", nonce, exc)
 
     # Optional: shoot the response to Telegram (if configured).
     notifier = getattr(request.app.state, "telegram_notify", None)

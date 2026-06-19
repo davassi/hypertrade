@@ -780,3 +780,21 @@ def test_idempotency_release_on_failure_allows_retry(monkeypatch, tmp_path):
     ok = client.post("/webhook", json=payload)
     assert ok.status_code == 200
     assert ok.json()["status"] == "ok"
+
+
+def test_idempotency_store_failure_returns_503(monkeypatch, tmp_path):
+    monkeypatch.setenv("HYPERTRADE_IDEMPOTENCY_ENABLED", "true")
+    monkeypatch.setenv("HYPERTRADE_DB_PATH", str(tmp_path / "idem.db"))
+    import sqlite3 as _sqlite3
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+
+    class _BrokenStore:
+        def reserve(self, *a, **k):
+            raise _sqlite3.OperationalError("db locked")
+    app.state.idempotency = _BrokenStore()
+
+    client = TestClient(app)
+    resp = client.post("/webhook", json=_idem_payload("nonce-broken-1"))
+    assert resp.status_code == 503
+    assert StubHyperliquidService.call_count == 0  # no order placed when store is down
