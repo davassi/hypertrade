@@ -22,6 +22,7 @@ from ..schemas.tradingview import TradingViewWebhook
 from ..security import require_ip_whitelisted
 
 from ..routes.tradingview_enums import SignalType, PositionType, OrderAction, Side
+from ..idempotency import ReserveOutcome
 
 from .hyperliquid_service import (
     HyperliquidService,
@@ -101,6 +102,11 @@ async def hypertrade_webhook(
     secret_enforcement(request, raw)
 
     payload = TradingViewWebhook.model_validate(raw)
+
+    idempotency = getattr(request.app.state, "idempotency", None)
+    nonce = payload.general.nonce
+    if idempotency is not None and not nonce:
+        raise HTTPException(status_code=400, detail="general.nonce is required")
 
     log.debug("Full webhook payload: %s", raw)
 
@@ -201,9 +207,20 @@ async def hypertrade_webhook(
     req_id = getattr(request.state, "request_id", None)
     db = getattr(request.app.state, "db", None)
 
+    if idempotency is not None:
+        reservation = idempotency.reserve(
+            nonce, req_id, get_settings().idempotency_inflight_timeout
+        )
+        if reservation.outcome is ReserveOutcome.DUPLICATE_COMPLETED:
+            return JSONResponse({**(reservation.result or {}), "status": "duplicate"})
+        if reservation.outcome is ReserveOutcome.IN_FLIGHT:
+            raise HTTPException(status_code=409, detail="Duplicate request in flight")
+
+    placed_ok = False
     try:
         log.info("Attempting to place order on Hyperliquid: symbol=%s side=%s", symbol, side.value)
         result = await _place_order_with_retry(client, order_request, max_retries=2)
+        placed_ok = True
     except HyperliquidValidationError as e:
         log.warning("Order validation error: %s", e)
         if db and req_id:
@@ -276,6 +293,9 @@ async def hypertrade_webhook(
                 retry_count=2,
             )
         raise HTTPException(status_code=502, detail=f"Exchange error: {e}") from e
+    finally:
+        if idempotency is not None and not placed_ok:
+            idempotency.release(nonce)
 
     log.info("Order placed successfully: %s", result)
 
@@ -300,6 +320,9 @@ async def hypertrade_webhook(
     
     # Finally: build a response.
     response = _build_response(payload, signal=signal, side=side, symbol=symbol)
+
+    if idempotency is not None:
+        idempotency.complete(nonce, response)
 
     # Optional: shoot the response to Telegram (if configured).
     notifier = getattr(request.app.state, "telegram_notify", None)

@@ -709,3 +709,61 @@ def test_general_model_parses_nonce():
     payload["general"]["nonce"] = "abc-123"
     model = TradingViewWebhook.model_validate(payload)
     assert model.general.nonce == "abc-123"
+
+
+# ===================================================================
+# Idempotency Integration Tests
+# ===================================================================
+
+def _idem_payload(nonce):
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["general"]["nonce"] = nonce
+    return payload
+
+
+def test_idempotency_missing_nonce_returns_400(monkeypatch, tmp_path):
+    monkeypatch.setenv("HYPERTRADE_IDEMPOTENCY_ENABLED", "true")
+    monkeypatch.setenv("HYPERTRADE_DB_PATH", str(tmp_path / "idem.db"))
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+    resp = client.post("/webhook", json=copy.deepcopy(BASE_PAYLOAD))  # no nonce
+    assert resp.status_code == 400
+
+
+def test_idempotency_duplicate_places_order_once(monkeypatch, tmp_path):
+    monkeypatch.setenv("HYPERTRADE_IDEMPOTENCY_ENABLED", "true")
+    monkeypatch.setenv("HYPERTRADE_DB_PATH", str(tmp_path / "idem.db"))
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+    payload = _idem_payload("nonce-dup-1")
+
+    first = client.post("/webhook", json=payload)
+    assert first.status_code == 200
+    assert StubHyperliquidService.call_count == 1
+
+    second = client.post("/webhook", json=payload)
+    assert second.status_code == 200
+    assert second.json()["status"] == "duplicate"
+    assert StubHyperliquidService.call_count == 1  # not placed again
+
+
+def test_idempotency_release_on_failure_allows_retry(monkeypatch, tmp_path):
+    monkeypatch.setenv("HYPERTRADE_IDEMPOTENCY_ENABLED", "true")
+    monkeypatch.setenv("HYPERTRADE_DB_PATH", str(tmp_path / "idem.db"))
+    StubHyperliquidService.reset()
+    StubHyperliquidService.should_fail = True
+    StubHyperliquidService.failure_type = "network"
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+    payload = _idem_payload("nonce-retry-1")
+
+    failed = client.post("/webhook", json=payload)
+    assert failed.status_code == 503  # network error after retries
+
+    # nonce released -> a retry with the same nonce succeeds and places the order
+    StubHyperliquidService.should_fail = False
+    ok = client.post("/webhook", json=payload)
+    assert ok.status_code == 200
+    assert ok.json()["status"] == "ok"
