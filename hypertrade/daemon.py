@@ -146,6 +146,19 @@ def create_daemon() -> FastAPI:
         app.state.db = None
         log.info("Database persistence disabled")
 
+    # Idempotency store (shares the order DB file). Config guarantees db_enabled
+    # is true whenever idempotency is enabled (see Settings validator).
+    if settings.idempotency_enabled:
+        from .idempotency import IdempotencyStore
+        app.state.idempotency = IdempotencyStore(settings.db_path)
+        log.info(
+            "Idempotency enabled (in-flight timeout %ss)",
+            settings.idempotency_inflight_timeout,
+        )
+    else:
+        app.state.idempotency = None
+        log.info("Idempotency disabled")
+
     # Finalize logging with configured level and add middleware
     app.add_middleware(LoggingMiddleware)
     app.add_middleware(

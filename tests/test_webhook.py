@@ -110,6 +110,9 @@ def make_app(monkeypatch, *, secret: str | None = None):
     monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "dummy-priv-key")
     monkeypatch.setenv("HYPERTRADE_SUBACCOUNT_ADDR", "0xSUB")
     monkeypatch.setenv("PRIVATE_KEY", "0x" + "1" * 64)
+    # Idempotency is opt-in per-test; keep the default suite nonce-free.
+    if os.getenv("HYPERTRADE_IDEMPOTENCY_ENABLED") is None:
+        monkeypatch.setenv("HYPERTRADE_IDEMPOTENCY_ENABLED", "false")
 
     # Ensure at least one authentication method is enabled
     # Check if IP whitelist was already explicitly enabled
