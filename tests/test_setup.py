@@ -66,3 +66,94 @@ def test_render_env_file_skips_empty():
     assert "HYPERTRADE_ENVIRONMENT=test" in out
     assert "HYPERTRADE_MASTER_ADDR=0xabc" in out
     assert "SUBACCOUNT" not in out
+
+
+import os
+
+
+class _Reader:
+    """Feeds scripted answers to prompt_until_valid / input()."""
+    def __init__(self, answers):
+        self.answers = list(answers)
+    def __call__(self, _prompt=""):
+        return self.answers.pop(0)
+
+
+def test_prompt_reprompts_until_valid():
+    reader = _Reader(["bad", "0x" + "a" * 40])
+    assert setup.prompt_until_valid("addr: ", setup.validate_address, reader=reader) == "0x" + "a" * 40
+
+
+def test_prompt_allows_empty_skip():
+    reader = _Reader([""])
+    assert setup.prompt_until_valid("opt: ", setup.validate_address, allow_empty=True, reader=reader) == ""
+
+
+def test_write_env_file_is_0600_and_has_keys(tmp_path):
+    p = tmp_path / ".env"
+    setup.write_env_file({"HYPERTRADE_ENVIRONMENT": "test", "HYPERTRADE_MASTER_ADDR": "0xabc"}, str(p))
+    assert (p.stat().st_mode & 0o777) == 0o600
+    body = p.read_text()
+    assert "HYPERTRADE_ENVIRONMENT=test" in body
+    assert "HYPERTRADE_MASTER_ADDR=0xabc" in body
+
+
+def test_write_env_file_merges_existing(tmp_path):
+    p = tmp_path / ".env"
+    p.write_text("HYPERTRADE_ENVIRONMENT=test\nHYPERTRADE_LISTEN_PORT=6487\n")
+    setup.write_env_file({"HYPERTRADE_MASTER_ADDR": "0xabc"}, str(p))
+    body = p.read_text()
+    assert "HYPERTRADE_LISTEN_PORT=6487" in body   # preserved
+    assert "HYPERTRADE_MASTER_ADDR=0xabc" in body   # added
+
+
+def test_pass_insert_invokes_pass_cli():
+    calls = []
+    def runner(args, **kwargs):
+        calls.append((args, kwargs.get("input")))
+        class R: returncode = 0
+        return R()
+    setup.pass_insert("hypertrade/master_addr", "0xabc", runner=runner)
+    assert calls[0][0][:3] == ["pass", "insert", "-m"]
+    assert "hypertrade/master_addr" in calls[0][0]
+    assert calls[0][1] == "0xabc\n"
+
+
+def test_persist_uses_env_when_pass_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup, "pass_available", lambda: False)
+    collected = {
+        "environment": "test",
+        "master_addr": "0x" + "a" * 40,
+        "api_wallet_priv": "b" * 64,
+        "subaccount_addr": "",
+        "env_values": {"HYPERTRADE_ENVIRONMENT": "test"},
+        "secrets": {"HYPERTRADE_MASTER_ADDR": "0x" + "a" * 40,
+                    "HYPERTRADE_API_WALLET_PRIV": "b" * 64},
+    }
+    env_path = tmp_path / ".env"
+    setup.persist(collected, reader=_Reader(["y"]), env_path=str(env_path))
+    body = env_path.read_text()
+    assert "HYPERTRADE_MASTER_ADDR=" in body
+    assert "HYPERTRADE_API_WALLET_PRIV=" in body
+
+
+def test_persist_uses_pass_when_available(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup, "pass_available", lambda: True)
+    calls = []
+    def runner(args, **kwargs):
+        calls.append(args)
+        class R: returncode = 0
+        return R()
+    collected = {
+        "environment": "prod",
+        "master_addr": "0x" + "a" * 40,
+        "api_wallet_priv": "b" * 64,
+        "subaccount_addr": "",
+        "env_values": {},
+        "secrets": {"HYPERTRADE_MASTER_ADDR": "0x" + "a" * 40,
+                    "HYPERTRADE_API_WALLET_PRIV": "b" * 64},
+    }
+    setup.persist(collected, runner=runner, env_path=str(tmp_path / ".env"))
+    inserted_keys = [a[-1] for a in calls]
+    assert "hypertrade/master_addr" in inserted_keys
+    assert "hypertrade/api_wallet_priv" in inserted_keys

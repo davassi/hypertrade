@@ -60,3 +60,123 @@ def pass_key(environment: str, name: str) -> str:
 def render_env_file(values: dict) -> str:
     """Render HYPERTRADE_* lines for a .env from a {KEY: value} dict (skips empty)."""
     return "".join(f"{k}={v}\n" for k, v in values.items() if str(v).strip())
+
+
+import getpass
+import subprocess
+
+# logical name -> (env var, pass entry name) for the secret values
+_SECRET_FIELDS = {
+    "master_addr": ("HYPERTRADE_MASTER_ADDR", "master_addr"),
+    "api_wallet_priv": ("HYPERTRADE_API_WALLET_PRIV", "api_wallet_priv"),
+    "subaccount_addr": ("HYPERTRADE_SUBACCOUNT_ADDR", "subaccount_addr"),
+    "webhook_secret": ("HYPERTRADE_WEBHOOK_SECRET", "webhook_secret"),
+}
+
+
+def prompt_until_valid(prompt, validator, *, hidden=False, allow_empty=False, reader=None):
+    read = reader or (getpass.getpass if hidden else input)
+    for _ in range(5):
+        value = read(prompt).strip()
+        if allow_empty and value == "":
+            return ""
+        if validator(value):
+            return value
+        print("  Invalid value, please try again.")
+    raise SystemExit("Too many invalid attempts; aborting setup.")
+
+
+def write_env_file(values: dict, path: str = ".env") -> None:
+    """Write/update a .env (0600), merging `values` into any existing keys."""
+    target = Path(path)
+    existing = {}
+    if target.exists():
+        for line in target.read_text().splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                key, _, val = line.partition("=")
+                existing[key.strip()] = val
+    existing.update({k: v for k, v in values.items() if str(v).strip()})
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(render_env_file(existing))
+    os.chmod(tmp, 0o600)
+    tmp.replace(target)
+
+
+def pass_insert(key: str, value: str, *, runner=subprocess.run) -> None:
+    """Store a secret in pass non-interactively (overwriting)."""
+    runner(["pass", "insert", "-m", "-f", key], input=value + "\n", text=True, check=True)
+
+
+def collect(reader=None) -> dict:
+    """Prompt for the minimum config (only what is unset) and return it."""
+    env = {k: os.environ.get(k, "") for k in REQUIRED_KEYS}
+    environment = env["HYPERTRADE_ENVIRONMENT"] or prompt_until_valid(
+        "Environment (prod/test): ", validate_environment, reader=reader)
+    master = env["HYPERTRADE_MASTER_ADDR"] or prompt_until_valid(
+        "Master address (0x...): ", validate_address, reader=reader)
+    priv = env["HYPERTRADE_API_WALLET_PRIV"] or prompt_until_valid(
+        "API wallet private key (hidden): ", validate_privkey, hidden=True, reader=reader)
+    sub = prompt_until_valid(
+        "Sub-account address (optional, Enter to skip): ",
+        validate_address, allow_empty=True, reader=reader)
+
+    secrets = {"HYPERTRADE_MASTER_ADDR": master, "HYPERTRADE_API_WALLET_PRIV": priv}
+    if sub:
+        secrets["HYPERTRADE_SUBACCOUNT_ADDR"] = sub
+    env_values = {"HYPERTRADE_ENVIRONMENT": environment}
+
+    method = ""
+    while method not in ("s", "w"):
+        method = (reader or input)("Auth method — [s]ecret or [w]hitelist: ").strip().lower()
+    if method == "s":
+        secret = prompt_until_valid(
+            "Webhook shared secret (hidden): ", lambda v: bool(v), hidden=True, reader=reader)
+        secrets["HYPERTRADE_WEBHOOK_SECRET"] = secret
+    else:
+        env_values["HYPERTRADE_IP_WHITELIST_ENABLED"] = "true"
+        ips = prompt_until_valid(
+            "First allowed IPv4: ", validate_ipv4, reader=reader)
+        env_values["HYPERTRADE_TV_WEBHOOK_IPS"] = f'["{ips}"]'
+
+    return {
+        "environment": environment, "master_addr": master,
+        "api_wallet_priv": priv, "subaccount_addr": sub,
+        "env_values": env_values, "secrets": secrets,
+    }
+
+
+def persist(collected: dict, *, runner=subprocess.run, reader=None, env_path: str = ".env") -> None:
+    """Persist collected values to pass (if available) or a .env fallback."""
+    environment = collected["environment"]
+    secrets = collected["secrets"]
+    env_values = collected["env_values"]
+    if pass_available():
+        for env_key, value in secrets.items():
+            name = next(n for _, (e, n) in _SECRET_FIELDS.items() if e == env_key)
+            pass_insert(pass_key(environment, name), value, runner=runner)
+        # non-secret flags (whitelist) still go to .env so Settings picks them up
+        if env_values:
+            write_env_file(env_values, env_path)
+        print("Saved secrets to `pass`" + (" and flags to .env." if env_values else "."))
+    else:
+        print(
+            "\n`pass` was not found. Recommended for secret storage:\n"
+            "  Debian/Ubuntu:  sudo apt install pass\n"
+            "  macOS:          brew install pass\n"
+            "  then initialize: pass init <your-gpg-id>\n"
+        )
+        answer = (reader or input)("Continue with a .env file instead? [Y/n]: ").strip().lower()
+        if answer in ("n", "no"):
+            raise SystemExit("Install `pass` and re-run `python -m hypertrade.setup`.")
+        write_env_file({**env_values, **secrets}, env_path)
+        print(f"Wrote configuration to {env_path} (mode 0600).")
+
+
+def run(reader=None, runner=subprocess.run) -> None:
+    print("HyperTrade guided setup — fill in the missing configuration.\n")
+    persist(collect(reader=reader), runner=runner, reader=reader)
+    print("\nDone. You can now start the daemon.")
+
+
+if __name__ == "__main__":
+    run()
