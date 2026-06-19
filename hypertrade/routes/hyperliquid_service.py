@@ -145,11 +145,16 @@ class HyperliquidService:
             log.debug("Leverage updated successfully: symbol=%s leverage=%sx", symbol, leverage)
 
         # ===================================================================
-        # Safe position sizing (Set up max around 85% of available, never 100%)
+        # Position sizing
         # ===================================================================
-        # Round to asset's size decimals (critical!)
-
-        size = round(request.qty * leverage, sz_decimals)
+        # `request.qty` is the position size (number of contracts) the strategy
+        # wants to hold. Leverage is applied by the exchange via update_leverage
+        # above — it must NOT also multiply the order size, or the resulting
+        # exposure would be leverage^2. Round to the asset's size decimals.
+        # NOTE: there is no balance cap here yet; `available` (fetched above) is
+        # not used to constrain size. Adding an ~85%-of-available cap is a known
+        # follow-up.
+        size = round(request.qty, sz_decimals)
         log.debug("Position size calculated: contracts=%s leverage=%sx size=%s sz_decimals=%s", request.qty, leverage, size, sz_decimals)
 
         if size <= 0:
@@ -182,6 +187,7 @@ class HyperliquidService:
                 side=_to_position_side(request.side),
                 size=size,
                 premium_bps=premium,
+                reduce_only=request.reduce_only,
             )
         
         # Safe printing – handle both filled and error cases
