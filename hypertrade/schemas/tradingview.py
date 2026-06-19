@@ -23,6 +23,7 @@ class General(BaseModel):
     timenow: datetime
     secret: Optional[str] = None
     leverage: Optional[str] = None
+    nonce: Optional[str] = None
 
 
 class Currency(BaseModel):

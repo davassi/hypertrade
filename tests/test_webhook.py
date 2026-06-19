@@ -697,3 +697,12 @@ def test_open_long_sets_reduce_only_false(monkeypatch):
     order_req = StubHyperliquidService.last_order_request
     assert order_req is not None
     assert order_req.reduce_only is False, "OPEN_LONG should have reduce_only=False"
+
+
+def test_general_model_parses_nonce():
+    """Test that the general model accepts and parses an optional nonce field."""
+    from hypertrade.schemas.tradingview import TradingViewWebhook
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["general"]["nonce"] = "abc-123"
+    model = TradingViewWebhook.model_validate(payload)
+    assert model.general.nonce == "abc-123"
