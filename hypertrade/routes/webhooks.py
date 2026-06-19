@@ -322,6 +322,7 @@ async def hypertrade_webhook(
     response = _build_response(payload, signal=signal, side=side, symbol=symbol)
 
     if idempotency is not None:
+        # complete() persists the plain dict body for replay; _build_response must return a dict (not a Response object).
         idempotency.complete(nonce, response)
 
     # Optional: shoot the response to Telegram (if configured).

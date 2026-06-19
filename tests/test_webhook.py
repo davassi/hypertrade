@@ -749,6 +749,19 @@ def test_idempotency_duplicate_places_order_once(monkeypatch, tmp_path):
     assert StubHyperliquidService.call_count == 1  # not placed again
 
 
+def test_idempotency_in_flight_returns_409(monkeypatch, tmp_path):
+    monkeypatch.setenv("HYPERTRADE_IDEMPOTENCY_ENABLED", "true")
+    monkeypatch.setenv("HYPERTRADE_DB_PATH", str(tmp_path / "idem.db"))
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+    # Pre-reserve so the request sees the nonce already in-flight (not stale).
+    app.state.idempotency.reserve("nonce-inflight-1", "pre-req", 60)
+    resp = client.post("/webhook", json=_idem_payload("nonce-inflight-1"))
+    assert resp.status_code == 409
+    assert StubHyperliquidService.call_count == 0  # no order placed
+
+
 def test_idempotency_release_on_failure_allows_retry(monkeypatch, tmp_path):
     monkeypatch.setenv("HYPERTRADE_IDEMPOTENCY_ENABLED", "true")
     monkeypatch.setenv("HYPERTRADE_DB_PATH", str(tmp_path / "idem.db"))
