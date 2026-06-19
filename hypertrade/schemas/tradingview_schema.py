@@ -16,7 +16,8 @@ TRADINGVIEW_SCHEMA = {
                 "time": {"type": "string", "format": "date-time"},
                 "timenow": {"type": "string", "format": "date-time"},
                 "secret": {"type": "string", "minLength": 1},
-                "leverage": {"type": "string", "minLength": 1}
+                "leverage": {"type": "string", "minLength": 1},
+                "nonce": {"type": "string", "minLength": 1}
             },
             "additionalProperties": True
         },

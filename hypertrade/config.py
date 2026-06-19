@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     db_path: str = "./hypertrade_local.db"
     db_enabled: bool = True
 
+    # Idempotency (at-most-once order placement keyed on general.nonce)
+    idempotency_enabled: bool = True
+    idempotency_inflight_timeout: int = 60  # seconds before an in_progress reservation is reclaimable
+
     # ── Validators ────────────────────────────────────────────────────────────
     @field_validator("environment")
     @classmethod
@@ -159,6 +163,16 @@ class Settings(BaseSettings):
                 "Without authentication, anyone can send trading commands to your account."
             )
 
+        return self
+
+    @model_validator(mode="after")
+    def _validate_idempotency_requires_db(self):
+        """Idempotency needs the order DB as its dedup store."""
+        if self.idempotency_enabled and not self.db_enabled:
+            raise ValueError(
+                "HYPERTRADE_IDEMPOTENCY_ENABLED=true requires the order DB "
+                "(HYPERTRADE_DB_ENABLED=true) as the dedup store."
+            )
         return self
 
 # Cached settings instance

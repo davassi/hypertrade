@@ -208,6 +208,8 @@ Behavior:
 - `HYPERTRADE_ENABLE_TRUSTED_HOSTS` (default `false`): enable Trusted Host middleware.
 - `HYPERTRADE_TRUSTED_HOSTS` (default `*`): allowed hosts when Trusted Host is enabled. Provide as a JSON list, e.g. `'["example.com","api.example.com"]'` (comma-separated values are not supported by the loader — see the note under IP Whitelisting).
 - Webhook requires `Content-Type: application/json` and returns 415 otherwise.
+- `HYPERTRADE_IDEMPOTENCY_ENABLED` (default `true`): require a unique `general.nonce` per order and place each at most once. Requires the order DB (the daemon refuses to start if `HYPERTRADE_DB_ENABLED=false`).
+- `HYPERTRADE_IDEMPOTENCY_INFLIGHT_TIMEOUT` (default `60`): seconds before an in-progress reservation is considered stale and reclaimable.
 
 ### Telegram Notifications (optional)
 
