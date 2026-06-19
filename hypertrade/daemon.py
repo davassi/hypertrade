@@ -136,7 +136,7 @@ def create_daemon() -> FastAPI:
     # Initialize database if enabled
     if getattr(settings, "db_enabled", True):
         try:
-            db = OrderDatabase(settings.db_path)
+            db = OrderDatabase(settings.db_path, max_rows=settings.max_history_rows)
             app.state.db = db
             log.info("Order database initialized at: %s", settings.db_path)
         except Exception as e:

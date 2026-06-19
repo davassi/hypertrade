@@ -14,13 +14,15 @@ log = logging.getLogger("uvicorn.error")
 class OrderDatabase:
     """SQLite database for storing order operations and failures."""
 
-    def __init__(self, db_path: str = "./hypertrade.db"):
+    def __init__(self, db_path: str = "./hypertrade.db", max_rows: int = 200):
         """Initialize database connection and create tables if needed.
 
         Args:
             db_path: Path to SQLite database file
+            max_rows: Max rows retained per history table (orders, failures)
         """
         self.db_path = db_path
+        self.max_rows = max_rows
         self._ensure_db_exists()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -159,6 +161,11 @@ class OrderDatabase:
                 response_json,
                 execution_ms,
             ))
+            cursor.execute(
+                "DELETE FROM orders WHERE id NOT IN "
+                "(SELECT id FROM orders ORDER BY id DESC LIMIT ?)",
+                (self.max_rows,),
+            )
             conn.commit()
             order_pk = cursor.lastrowid
             log.debug(
@@ -212,6 +219,11 @@ class OrderDatabase:
                 attempt,
                 retry_count,
             ))
+            cursor.execute(
+                "DELETE FROM failures WHERE id NOT IN "
+                "(SELECT id FROM failures ORDER BY id DESC LIMIT ?)",
+                (self.max_rows,),
+            )
             conn.commit()
             failure_id = cursor.lastrowid
             log.debug(
