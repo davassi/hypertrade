@@ -29,6 +29,7 @@ The payload has four required objects: `general`, `currency`, `order`, `market`.
 | | `strategy` | ➖ | string | Free-text strategy name. |
 | | `secret` | ➖ | string | Required **only** if `HYPERTRADE_WEBHOOK_SECRET` is set (see §4). |
 | | `leverage` | ➖ | string | `"3x"`, `"3X"` or `"3"` → parsed to int. Invalid → `400`. |
+| | `nonce` | ➖ | string | Idempotency key; unique per order, reused on retry. Required when `HYPERTRADE_IDEMPOTENCY_ENABLED=true` (default). |
 | `currency` | `base` | ✅ | string | **Drives the traded symbol**: `symbol = base.upper()`. |
 | | `quote` | ➖ | string | Informational. |
 | `order` | `action` | ✅ | `"buy"` \| `"sell"` | One half of the signal derivation. |
@@ -93,7 +94,7 @@ the stated signal via `parse_signal()`.
 ### OPEN_LONG — open a long
 ```json
 {
-  "general": { "strategy": "My Strategy", "ticker": "SOLUSD", "interval": "60", "time": "2026-06-18T06:00:00Z", "timenow": "2026-06-18T06:00:01Z", "secret": "YOUR_SECRET", "leverage": "3x" },
+  "general": { "strategy": "My Strategy", "ticker": "SOLUSD", "interval": "60", "time": "2026-06-18T06:00:00Z", "timenow": "2026-06-18T06:00:01Z", "secret": "YOUR_SECRET", "leverage": "3x", "nonce": "<unique-per-order>" },
   "currency": { "base": "SOL", "quote": "USD" },
   "order": { "action": "buy", "contracts": "10", "price": "150.0", "id": "Long Entry", "comment": "open long", "alert_message": "" },
   "market": { "position": "long", "position_size": "10", "previous_position": "flat", "previous_position_size": "0" }
@@ -103,7 +104,7 @@ the stated signal via `parse_signal()`.
 ### CLOSE_LONG — close the long
 ```json
 {
-  "general": { "strategy": "My Strategy", "ticker": "SOLUSD", "interval": "60", "time": "2026-06-18T06:00:00Z", "timenow": "2026-06-18T06:00:01Z", "secret": "YOUR_SECRET", "leverage": "3x" },
+  "general": { "strategy": "My Strategy", "ticker": "SOLUSD", "interval": "60", "time": "2026-06-18T06:00:00Z", "timenow": "2026-06-18T06:00:01Z", "secret": "YOUR_SECRET", "leverage": "3x", "nonce": "<unique-per-order>" },
   "currency": { "base": "SOL", "quote": "USD" },
   "order": { "action": "sell", "contracts": "10", "price": "150.0", "id": "Long Exit", "comment": "close long", "alert_message": "" },
   "market": { "position": "flat", "position_size": "0", "previous_position": "long", "previous_position_size": "10" }
@@ -113,7 +114,7 @@ the stated signal via `parse_signal()`.
 ### OPEN_SHORT — open a short
 ```json
 {
-  "general": { "strategy": "My Strategy", "ticker": "SOLUSD", "interval": "60", "time": "2026-06-18T06:00:00Z", "timenow": "2026-06-18T06:00:01Z", "secret": "YOUR_SECRET", "leverage": "3x" },
+  "general": { "strategy": "My Strategy", "ticker": "SOLUSD", "interval": "60", "time": "2026-06-18T06:00:00Z", "timenow": "2026-06-18T06:00:01Z", "secret": "YOUR_SECRET", "leverage": "3x", "nonce": "<unique-per-order>" },
   "currency": { "base": "SOL", "quote": "USD" },
   "order": { "action": "sell", "contracts": "10", "price": "150.0", "id": "Short Entry", "comment": "open short", "alert_message": "" },
   "market": { "position": "short", "position_size": "10", "previous_position": "flat", "previous_position_size": "0" }
@@ -123,7 +124,7 @@ the stated signal via `parse_signal()`.
 ### CLOSE_SHORT — close the short
 ```json
 {
-  "general": { "strategy": "My Strategy", "ticker": "SOLUSD", "interval": "60", "time": "2026-06-18T06:00:00Z", "timenow": "2026-06-18T06:00:01Z", "secret": "YOUR_SECRET", "leverage": "3x" },
+  "general": { "strategy": "My Strategy", "ticker": "SOLUSD", "interval": "60", "time": "2026-06-18T06:00:00Z", "timenow": "2026-06-18T06:00:01Z", "secret": "YOUR_SECRET", "leverage": "3x", "nonce": "<unique-per-order>" },
   "currency": { "base": "SOL", "quote": "USD" },
   "order": { "action": "buy", "contracts": "10", "price": "150.0", "id": "Short Exit", "comment": "close short", "alert_message": "" },
   "market": { "position": "flat", "position_size": "0", "previous_position": "short", "previous_position_size": "10" }
@@ -156,7 +157,31 @@ At least one method must be enabled (the daemon refuses to start otherwise):
 
 ---
 
-## 5. Sending a payload
+## 5. Idempotency
+
+When `HYPERTRADE_IDEMPOTENCY_ENABLED=true` (the default), every order-placing
+request must include a `general.nonce` string that uniquely identifies the
+order. On retry, send the **same nonce** — HyperTrade will return the original
+result without re-placing the order.
+
+| Situation | HTTP status | Response body |
+| --- | --- | --- |
+| `general.nonce` absent and idempotency enabled | `400` | validation error |
+| Duplicate nonce — first request still in flight | `409` | `{"status": "duplicate_inflight", ...}` |
+| Duplicate nonce — order already completed | `200` | `{"status": "duplicate", ...}` |
+| New nonce (normal path) | `200` | `{"status": "ok", ...}` |
+
+In-flight reservations are automatically released after
+`HYPERTRADE_IDEMPOTENCY_INFLIGHT_TIMEOUT` seconds (default `60`) in case the
+daemon crashes before completing the order.
+
+> **DB required.** The idempotency store relies on the order database. If
+> `HYPERTRADE_DB_ENABLED=false` the daemon will refuse to start when idempotency
+> is enabled.
+
+---
+
+## 6. Sending a payload
 
 ```bash
 curl -X POST http://localhost:6487/webhook \
