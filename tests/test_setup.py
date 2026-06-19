@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 
@@ -68,9 +69,6 @@ def test_render_env_file_skips_empty():
     assert "SUBACCOUNT" not in out
 
 
-import os
-
-
 class _Reader:
     """Feeds scripted answers to prompt_until_valid / input()."""
     def __init__(self, answers):
@@ -117,6 +115,14 @@ def test_pass_insert_invokes_pass_cli():
     assert calls[0][0][:3] == ["pass", "insert", "-m"]
     assert "hypertrade/master_addr" in calls[0][0]
     assert calls[0][1] == "0xabc\n"
+
+
+def test_pass_insert_propagates_runner_error():
+    import pytest
+    def runner(args, **kwargs):
+        raise RuntimeError("gpg locked")
+    with pytest.raises(RuntimeError):
+        setup.pass_insert("hypertrade/master_addr", "x", runner=runner)
 
 
 def test_persist_uses_env_when_pass_absent(tmp_path, monkeypatch):

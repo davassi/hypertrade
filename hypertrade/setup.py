@@ -5,10 +5,13 @@ Pure helpers (no terminal I/O) live at the top so they can be unit-tested; the
 interactive run() shell is added in Task 2.
 """
 
+import getpass
 import os
 import re
 import shutil
+import subprocess
 from pathlib import Path
+from typing import Callable, Optional
 
 ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 PRIVKEY_RE = re.compile(r"^(0x)?[0-9a-fA-F]{64}$")
@@ -62,9 +65,6 @@ def render_env_file(values: dict) -> str:
     return "".join(f"{k}={v}\n" for k, v in values.items() if str(v).strip())
 
 
-import getpass
-import subprocess
-
 # logical name -> (env var, pass entry name) for the secret values
 _SECRET_FIELDS = {
     "master_addr": ("HYPERTRADE_MASTER_ADDR", "master_addr"),
@@ -74,7 +74,14 @@ _SECRET_FIELDS = {
 }
 
 
-def prompt_until_valid(prompt, validator, *, hidden=False, allow_empty=False, reader=None):
+def prompt_until_valid(
+    prompt: str,
+    validator: Callable[[str], bool],
+    *,
+    hidden: bool = False,
+    allow_empty: bool = False,
+    reader: Optional[Callable[[str], str]] = None,
+) -> str:
     read = reader or (getpass.getpass if hidden else input)
     for _ in range(5):
         value = read(prompt).strip()
@@ -97,9 +104,13 @@ def write_env_file(values: dict, path: str = ".env") -> None:
                 existing[key.strip()] = val
     existing.update({k: v for k, v in values.items() if str(v).strip()})
     tmp = target.with_name(target.name + ".tmp")
-    tmp.write_text(render_env_file(existing))
-    os.chmod(tmp, 0o600)
-    tmp.replace(target)
+    try:
+        tmp.write_text(render_env_file(existing))
+        os.chmod(tmp, 0o600)
+        tmp.replace(target)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def pass_insert(key: str, value: str, *, runner=subprocess.run) -> None:
@@ -126,8 +137,12 @@ def collect(reader=None) -> dict:
     env_values = {"HYPERTRADE_ENVIRONMENT": environment}
 
     method = ""
-    while method not in ("s", "w"):
+    for _ in range(5):
         method = (reader or input)("Auth method — [s]ecret or [w]hitelist: ").strip().lower()
+        if method in ("s", "w"):
+            break
+    else:
+        raise SystemExit("Too many invalid attempts; aborting setup.")
     if method == "s":
         secret = prompt_until_valid(
             "Webhook shared secret (hidden): ", lambda v: bool(v), hidden=True, reader=reader)
