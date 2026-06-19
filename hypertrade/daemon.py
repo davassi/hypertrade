@@ -49,6 +49,8 @@ def _please_die_gracefully() -> None:
         "\n\n"
 
         "The daemon will start automatically once these are set.\n"
+        "\n"
+        "Tip: run  python -m hypertrade.setup  for a guided, interactive setup.\n"
     )
 
     log.info(banner)

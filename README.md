@@ -70,6 +70,23 @@ uvicorn hypertrade.daemon:app --host 0.0.0.0 --port 6487
 python -m hypertrade
 ```
 
+### Guided setup (recommended for first run)
+
+Run an interactive wizard that collects the minimum config needed to start
+and stores it for you:
+
+```bash
+python -m hypertrade.setup
+```
+
+It prompts only for what is missing — environment (`prod`/`test`), master
+address, API wallet private key (hidden), an optional sub-account, and one
+authentication method (a webhook secret or the IP whitelist). Secrets are
+saved to [`pass`](https://www.passwordstore.org/) when it is installed;
+otherwise the wizard recommends installing `pass` and falls back to writing a
+`.env` file (mode `0600`). The `hypertrade-{prod,test}.{sh,fish}` launchers run
+this automatically when required configuration is not yet present.
+
 ## Environment Variables (required)
 
 Hypertrade won't start unless these variables are set:
