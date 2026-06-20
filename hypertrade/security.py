@@ -1,5 +1,6 @@
-"""Route security helpers: IP whitelisting and client IP extraction."""
+"""Route security helpers: IP whitelisting, client IP extraction, and Bearer-secret auth."""
 
+import hmac
 from typing import Iterable, Optional
 
 from fastapi import Depends, HTTPException, Request
@@ -28,6 +29,27 @@ def _extract_client_ip(request: Request, trust_forwarded_for: bool) -> Optional[
     if request.client:
         return request.client.host
     return None
+
+
+def require_bearer_secret(request: Request) -> None:
+    """Require `Authorization: Bearer <webhook_secret>`.
+
+    Raises 403 if no webhook secret is configured (the resource cannot be
+    unlocked), 401 if the header is missing/malformed or the token is wrong.
+    """
+    settings = request.app.state.settings
+    env_secret = getattr(settings, "webhook_secret", None)
+    if not env_secret:
+        raise HTTPException(status_code=403, detail="Forbidden: webhook secret not configured")
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized: missing Bearer token")
+
+    provided = auth_header[7:]  # strip "Bearer "
+    if not hmac.compare_digest(provided, env_secret.get_secret_value()):
+        raise HTTPException(status_code=401, detail="Unauthorized: invalid secret")
+
 
 def require_ip_whitelisted(allowed_ips: Optional[Iterable[str]] = None):
     """FastAPI dependency that enforces a simple IP whitelist.

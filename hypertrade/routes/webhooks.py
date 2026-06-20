@@ -20,7 +20,7 @@ from jsonschema import (
 from ..config import get_settings
 from ..schemas.tradingview_schema import TRADINGVIEW_SCHEMA
 from ..schemas.tradingview import TradingViewWebhook
-from ..security import require_ip_whitelisted
+from ..security import require_ip_whitelisted, require_bearer_secret
 
 from ..routes.tradingview_enums import SignalType, PositionType, OrderAction, Side
 from ..idempotency import ReserveOutcome
@@ -34,7 +34,7 @@ from .hyperliquid_service import (
 )
 
 router = APIRouter(tags=["webhooks"])
-history_router = APIRouter(tags=["history"])
+history_router = APIRouter(tags=["history"], dependencies=[Depends(require_bearer_secret)])
 log = logging.getLogger("uvicorn.error")
 
 async def _place_order_with_retry(client: HyperliquidService, order_request: OrderRequest, max_retries: int = 2) -> dict:

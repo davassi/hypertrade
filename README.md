@@ -168,6 +168,17 @@ Env:
 export HYPERTRADE_WEBHOOK_SECRET='your-shared-secret'
 ```
 
+### History Endpoints (authentication required)
+
+The `/history/*` endpoints require authentication with the webhook secret:
+
+```bash
+curl -H "Authorization: Bearer $HYPERTRADE_WEBHOOK_SECRET" http://localhost:6487/history/stats
+```
+
+Requests without a valid `Authorization: Bearer <secret>` get `401`; if no
+`HYPERTRADE_WEBHOOK_SECRET` is configured, `/history` returns `403`.
+
 ### TradingView Webhook Payload
 
 Payload (TradingView template) with all the placeholders, including secret and leverage. Copy and paste it on as TradingView Alert.
