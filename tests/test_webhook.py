@@ -798,3 +798,23 @@ def test_idempotency_store_failure_returns_503(monkeypatch, tmp_path):
     resp = client.post("/webhook", json=_idem_payload("nonce-broken-1"))
     assert resp.status_code == 503
     assert StubHyperliquidService.call_count == 0  # no order placed when store is down
+
+
+# ===================================================================
+# History Endpoint Auth Tests
+# ===================================================================
+
+def test_history_requires_bearer_auth(monkeypatch):
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+    assert client.get("/history/orders").status_code == 401                                    # missing
+    assert client.get("/history/orders", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.get("/history/stats", headers={"Authorization": "Bearer secret"}).status_code == 200
+    assert client.get("/history/orders", headers={"Authorization": "Bearer secret"}).status_code == 200
+
+
+def test_admin_auth_still_enforced_via_shared_dependency(monkeypatch):
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+    # No token → rejected by the shared dependency (regression after the DRY refactor)
+    assert client.post("/admin/telegram", json={"enabled": False}).status_code == 401

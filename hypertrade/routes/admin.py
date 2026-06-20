@@ -1,7 +1,6 @@
 """Admin endpoints for managing application settings."""
 
 import logging
-import hmac
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -9,6 +8,7 @@ from typing import Optional
 
 from ..config import get_settings
 from ..notify import send_telegram_message
+from ..security import require_bearer_secret
 
 log = logging.getLogger("uvicorn.error")
 
@@ -31,28 +31,6 @@ class TelegramSettingsResponse(BaseModel):
     telegram_bot_token: Optional[str] = Field(None, description="Current bot token (masked)")
     telegram_chat_id: Optional[str] = Field(None, description="Current chat ID")
     message: Optional[str] = Field(None, description="Operation message")
-
-
-def _validate_webhook_secret(request: Request) -> None:
-    """Validate webhook secret from Authorization header.
-
-    Expects: Authorization: Bearer <secret>
-    """
-    settings = request.app.state.settings
-    env_secret = getattr(settings, "webhook_secret", None)
-
-    if not env_secret:
-        raise HTTPException(status_code=403, detail="Forbidden: webhook secret not configured")
-
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Unauthorized: missing Bearer token")
-
-    provided_secret = auth_header[7:]  # Remove "Bearer " prefix
-    expected_secret = env_secret.get_secret_value()
-
-    if not hmac.compare_digest(provided_secret, expected_secret):
-        raise HTTPException(status_code=401, detail="Unauthorized: invalid secret")
 
 
 def _mask_secret(secret: str, show_chars: int = 4) -> str:
@@ -85,7 +63,7 @@ async def manage_telegram_settings(
         Updated Telegram settings status
     """
     # Validate secret
-    _validate_webhook_secret(request)
+    require_bearer_secret(request)
 
     app_settings = request.app.state.settings
 
