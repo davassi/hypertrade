@@ -1,4 +1,4 @@
-"""Route security helpers: IP whitelisting and client IP extraction."""
+"""Route security helpers: IP whitelisting, client IP extraction, and Bearer-secret auth."""
 
 import hmac
 from typing import Iterable, Optional
@@ -29,6 +29,7 @@ def _extract_client_ip(request: Request, trust_forwarded_for: bool) -> Optional[
     if request.client:
         return request.client.host
     return None
+
 
 def require_bearer_secret(request: Request) -> None:
     """Require `Authorization: Bearer <webhook_secret>`.
