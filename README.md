@@ -27,18 +27,15 @@ It validates webhook payloads, enforces secret auth and IP whitelisting, and emi
 
 <img width="1503" height="244" alt="image" src="https://github.com/user-attachments/assets/99a93458-f25b-4a98-ba76-459b35ffe70f" />
 
-## Before using HyperTrade, 4 Rules for Sleeping at Night:
+## Before using HyperTrade, 3 Rules for Sleeping at Night:
 
-1. **One asset per sub-account.**
-Each Hyperliquid sub-account must be dedicated to a single asset. This ensures isolated margin management and prevents cross-liquidation risks.
-
-2. **Define a Leverage Policy.**  
+1. **Define a Leverage Policy.**  
 ALWAYS trade with a maximum leverage of 3x–5x in cross-margin mode to improve risk control. NEVER gamble with a 10x–20x leverage.
 
-3. **Deep Defensive Capital.**  
+2. **Deep Defensive Capital.**  
 Keep a portion of idle funds as defensive capital. This reserve extends the liquidation range and protects the position during periods of volatility.
 
-4. **Never forget a Stop Loss.**  
+3. **Never forget a Stop Loss.**  
 Never be greedy. Always include a stop loss in your strategy, no matter what. 
 
 ## Requirements
