@@ -828,11 +828,12 @@ def test_webhook_dry_run_returns_dry_run_without_placing(monkeypatch, tmp_path):
     """HYPERTRADE_DRY_RUN=true: webhook validated, but no order/DB/idempotency."""
     monkeypatch.setenv("HYPERTRADE_DRY_RUN", "true")
     monkeypatch.setenv("HYPERTRADE_DB_PATH", str(tmp_path / "dryrun.db"))
+    monkeypatch.setenv("HYPERTRADE_IDEMPOTENCY_ENABLED", "true")
     StubHyperliquidService.reset()
     app = make_app(monkeypatch, secret="secret")
     client = TestClient(app)
 
-    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload = _idem_payload("nonce-dryrun-1")
     resp = client.post("/webhook", json=payload)
     assert resp.status_code == 200, resp.text
     data = resp.json()
@@ -842,10 +843,22 @@ def test_webhook_dry_run_returns_dry_run_without_placing(monkeypatch, tmp_path):
     assert data["symbol"] == "SOL"
     assert data["contracts"] == "46231.75300000"
     assert data["price"] == "183.81"
+    assert data["leverage"] == 1
+    assert data["reduce_only"] is False
+    assert data["subaccount"] == "0xSUB"
 
     # Nothing left the process: no exchange call, no DB row.
     assert StubHyperliquidService.call_count == 0
     assert app.state.db.get_orders(limit=10) == []
+
+    # Prove dry-run left NO idempotency reservation: a second identical request
+    # (same nonce) must also return "dry_run", not "duplicate" or 409. If the
+    # first call had written to the idempotency store the nonce would be
+    # in-flight or completed and the second call would diverge.
+    resp2 = client.post("/webhook", json=payload)
+    assert resp2.status_code == 200, resp2.text
+    assert resp2.json()["status"] == "dry_run"
+    assert StubHyperliquidService.call_count == 0
 
 
 def test_dry_run_logs_startup_warning(monkeypatch, caplog):

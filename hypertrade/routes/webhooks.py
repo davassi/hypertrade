@@ -196,6 +196,7 @@ async def hypertrade_webhook(
 
     # Dry-run / demo: the full pipeline above is exercised, but nothing leaves
     # the process — no exchange call, no DB write, no idempotency, no Telegram.
+    # Keep any new external/side-effecting call BELOW this branch — above it runs in dry-run too.
     if settings.dry_run:
         log.info(
             "DRY-RUN: order NOT placed | %s %s qty=%s price=%s lev=%sx reduce_only=%s",
