@@ -22,6 +22,7 @@ It validates webhook payloads, enforces secret auth and IP whitelisting, and emi
 - Payload secret.
 - Environment secrets.
 - Specify a different leverage per asset.
+- Dry-run / demo mode (`HYPERTRADE_DRY_RUN=true`): validate webhooks without trading.
 - Health check at `GET /health`.
 - Simple config via env vars or `.env` (no external dotenv dependency).
 
