@@ -868,3 +868,33 @@ def test_dry_run_logs_startup_warning(monkeypatch, caplog):
     with caplog.at_level(_logging.WARNING, logger="uvicorn.error"):
         make_app(monkeypatch, secret="secret")
     assert any("DRY-RUN MODE" in r.getMessage() for r in caplog.records)
+
+
+def test_dex_qualified_symbol_preserves_case(monkeypatch):
+    """HIP-3 dex-qualified bases (e.g. 'xyz:KR200') pass through verbatim; plain
+    bases are still upper-cased.
+
+    Builder-deployed dex coins are dex-qualified ('xyz:KR200') and the dex prefix
+    is case-sensitive on Hyperliquid, so upper-casing would corrupt it to
+    'XYZ:KR200' and miss the real market.
+    """
+    # dex-qualified base: colon present -> verbatim, case preserved
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["currency"]["base"] = "xyz:KR200"
+    resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["symbol"] == "xyz:KR200"
+    assert StubHyperliquidService.last_order_request.symbol == "xyz:KR200"
+
+    # plain base: still normalized to upper-case (regression guard)
+    StubHyperliquidService.reset()
+    payload2 = copy.deepcopy(BASE_PAYLOAD)
+    payload2["currency"]["base"] = "link"
+    resp2 = client.post("/webhook", json=payload2)
+    assert resp2.status_code == 200, resp2.text
+    assert resp2.json()["symbol"] == "LINK"
+    assert StubHyperliquidService.last_order_request.symbol == "LINK"

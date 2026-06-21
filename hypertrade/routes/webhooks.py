@@ -132,7 +132,12 @@ async def hypertrade_webhook(
             "order_id": payload.order.id,
         })
     
-    symbol = payload.currency.base.upper()
+    # Builder-deployed (HIP-3) dex coins are dex-qualified ("xyz:KR200") and the
+    # dex prefix is case-sensitive on Hyperliquid — uppercasing corrupts it to
+    # "XYZ:KR200". Normalize case only for plain (Binance-style) bases; pass
+    # dex-qualified coins through verbatim.
+    raw_base = payload.currency.base
+    symbol = raw_base if ":" in raw_base else raw_base.upper()
     # contracts/price are already validated as Decimal by the Pydantic model;
     # keep them as Decimal so exchange-bound sizing/pricing stays exact (a float
     # round-trip corrupts precision, e.g. Decimal(0.1_float) != Decimal("0.1")).
