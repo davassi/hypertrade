@@ -85,6 +85,79 @@ otherwise the wizard recommends installing `pass` and falls back to writing a
 `.env` file (mode `0600`). The `hypertrade-{prod,test}.{sh,fish}` launchers run
 this automatically when required configuration is not yet present.
 
+## Dry-run (demo) mode
+
+Set `HYPERTRADE_DRY_RUN=true` to validate incoming webhooks **without trading**.
+The request runs the full pipeline — content-type, JSON-schema, secret/auth,
+signal parsing, leverage and `reduce_only` mapping — and returns a `dry_run`
+response describing the order that *would* have been placed, while performing
+**no side effect**: no Hyperliquid order, no database write, no idempotency
+reservation, and no Telegram notification. On startup the daemon logs a clear
+`⚠️ DRY-RUN MODE ENABLED` warning so a demo instance is never mistaken for a
+live one.
+
+```bash
+export HYPERTRADE_DRY_RUN=true
+uvicorn hypertrade.daemon:app --host 127.0.0.1 --port 6499
+```
+
+A successful call returns the mapped order it would have sent:
+
+```json
+{
+  "status": "dry_run",
+  "signal": "REDUCE_LONG",
+  "side": "sell",
+  "symbol": "SOL",
+  "action": "sell",
+  "contracts": "10.5",
+  "price": "183.81",
+  "leverage": 3,
+  "reduce_only": true,
+  "subaccount": "0xYourSubaccount",
+  "received_at": "2026-01-01T00:00:00+00:00"
+}
+```
+
+**Dry-run does not relax authentication.** The shared secret, the IP whitelist,
+and the nonce requirement (while idempotency is enabled) are all still enforced
+— that is the point: you exercise the real request path. When testing from
+`localhost`, the default IP whitelist (TradingView's published IPs) rejects
+`127.0.0.1` with `403`. For local testing, either disable the whitelist and
+authenticate with the secret, or add your own address:
+
+```bash
+# Option A: disable the IP whitelist, authenticate with the shared secret
+export HYPERTRADE_IP_WHITELIST_ENABLED=false
+export HYPERTRADE_WEBHOOK_SECRET='testsecret'
+
+# Option B: keep the whitelist but allow your own address
+export 'HYPERTRADE_TV_WEBHOOK_IPS=["127.0.0.1"]'
+```
+
+Then send a test order. The payload must carry `general.secret` matching
+`HYPERTRADE_WEBHOOK_SECRET`, plus a unique `general.nonce` while idempotency is
+enabled:
+
+```bash
+curl -s -X POST http://127.0.0.1:6499/webhook \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "general": {"strategy":"Demo","ticker":"SOLUSD","interval":"60",
+      "time":"2025-10-21T06:00:00Z","timenow":"2025-10-21T06:00:45Z",
+      "secret":"testsecret","leverage":"3X","nonce":"demo-1"},
+    "currency": {"quote":"USD","base":"SOL"},
+    "order": {"action":"sell","contracts":"10.5","price":"183.81",
+      "id":"demo","comment":"","alert_message":""},
+    "market": {"position":"long","position_size":"10.5",
+      "previous_position":"long","previous_position_size":"21"}
+  }'
+```
+
+Because idempotency is skipped in dry-run, re-sending the same `nonce` returns
+`dry_run` again rather than `duplicate` — repeated test webhooks are never
+deduplicated.
+
 ## Environment Variables (required)
 
 Hypertrade won't start unless these variables are set:
