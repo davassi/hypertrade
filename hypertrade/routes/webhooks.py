@@ -166,13 +166,6 @@ async def hypertrade_webhook(
     else:
         log.debug("No subaccount configured - order will trade on master account")
 
-    client = HyperliquidService(
-        base_url=settings.api_url,
-        master_addr=settings.master_addr,
-        api_wallet_priv=settings.api_wallet_priv.get_secret_value(),
-        subaccount_addr=vault_address,
-    )
-    
     # Determine reduce_only flag based on signal type
     # REDUCE signals should only reduce existing positions, not open new ones
     reduce_only = signal in {SignalType.REDUCE_LONG, SignalType.REDUCE_SHORT}
@@ -199,6 +192,29 @@ async def hypertrade_webhook(
         order_request.price,
         order_request.leverage or 1,
         order_request.reduce_only,
+    )
+
+    # Dry-run / demo: the full pipeline above is exercised, but nothing leaves
+    # the process — no exchange call, no DB write, no idempotency, no Telegram.
+    if settings.dry_run:
+        log.info(
+            "DRY-RUN: order NOT placed | %s %s qty=%s price=%s lev=%sx reduce_only=%s",
+            symbol,
+            side.value,
+            order_request.qty,
+            order_request.price,
+            order_request.leverage or 1,
+            order_request.reduce_only,
+        )
+        return _build_dry_run_response(
+            payload, signal=signal, side=side, symbol=symbol, order_request=order_request
+        )
+
+    client = HyperliquidService(
+        base_url=settings.api_url,
+        master_addr=settings.master_addr,
+        api_wallet_priv=settings.api_wallet_priv.get_secret_value(),
+        subaccount_addr=vault_address,
     )
 
     # ===================================================================
@@ -523,6 +539,30 @@ def _build_response(
         "action": payload.order.action,
         "contracts": str(payload.order.contracts),
         "price": str(payload.order.price),
+        "received_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+def _build_dry_run_response(
+    payload: TradingViewWebhook,
+    *,
+    signal: SignalType,
+    side: Side,
+    symbol: str,
+    order_request: OrderRequest,
+) -> dict:
+    """Mirror of `_build_response` for dry-run: echo the order that *would* be sent."""
+    return {
+        "status": "dry_run",
+        "signal": signal.value,
+        "side": side.value,
+        "symbol": symbol,
+        "ticker": payload.general.ticker,
+        "action": payload.order.action,
+        "contracts": str(order_request.qty),
+        "price": str(order_request.price),
+        "leverage": order_request.leverage,
+        "reduce_only": order_request.reduce_only,
+        "subaccount": order_request.subaccount,
         "received_at": datetime.now(timezone.utc).isoformat(),
     }
 

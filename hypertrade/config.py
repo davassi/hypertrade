@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     idempotency_enabled: bool = True
     idempotency_inflight_timeout: int = 60  # seconds before an in_progress reservation is reclaimable
 
+    # Dry-run / demo: accept and fully validate webhooks but never place orders,
+    # write to the DB, touch the idempotency store, or send Telegram messages.
+    dry_run: bool = False
+
     # ── Validators ────────────────────────────────────────────────────────────
     @field_validator("environment")
     @classmethod
