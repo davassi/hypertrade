@@ -221,6 +221,12 @@ def create_daemon() -> FastAPI:
     # Log endpoints after routes are registered
     log_endpoints(app)
 
+    if settings.dry_run:
+        log.warning(
+            "⚠️  DRY-RUN MODE ENABLED — webhooks are validated but NO orders are "
+            "sent to Hyperliquid, NO DB writes, NO Telegram notifications."
+        )
+
     return app
 
 

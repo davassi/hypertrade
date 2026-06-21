@@ -846,3 +846,12 @@ def test_webhook_dry_run_returns_dry_run_without_placing(monkeypatch, tmp_path):
     # Nothing left the process: no exchange call, no DB row.
     assert StubHyperliquidService.call_count == 0
     assert app.state.db.get_orders(limit=10) == []
+
+
+def test_dry_run_logs_startup_warning(monkeypatch, caplog):
+    """Enabling dry-run logs a WARNING banner so a demo daemon isn't mistaken for live."""
+    import logging as _logging
+    monkeypatch.setenv("HYPERTRADE_DRY_RUN", "true")
+    with caplog.at_level(_logging.WARNING, logger="uvicorn.error"):
+        make_app(monkeypatch, secret="secret")
+    assert any("DRY-RUN MODE" in r.getMessage() for r in caplog.records)
