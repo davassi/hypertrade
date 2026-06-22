@@ -7,6 +7,7 @@ from typing import Any, Dict, Tuple, Optional
 
 import requests
 from hypertrade.config import get_settings
+from .hyperliquid_errors import translate_request_errors
 
 log = logging.getLogger("uvicorn.error")
 
@@ -76,9 +77,7 @@ class HyperliquidDataClient:
 
     def get_all_mids(self) -> Dict[str, float]:
         """Return a mapping of non-index symbols to their mid prices."""
-        resp = requests.post(self.info_url, json={"type": "allMids"}, timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
+        data = self._post({"type": "allMids"})
         return {s: float(p) for s, p in data.items() if not s.startswith("@")}
 
     def get_available_balance(self, address: Optional[str] = None) -> float:
@@ -87,10 +86,7 @@ class HyperliquidDataClient:
         if not addr:
             raise ValueError("Account address required")
 
-        payload = {"type": "clearinghouseState", "user": addr}
-        resp = requests.post(self.info_url, json=payload, timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
+        data = self._post({"type": "clearinghouseState", "user": addr})
 
         if "withdrawable" in data and data["withdrawable"] is not None:
             return float(data["withdrawable"])
@@ -105,15 +101,22 @@ class HyperliquidDataClient:
     # Internal helpers
     # ===================================================================
 
+    def _post(self, payload: Dict[str, Any], timeout: int = 5) -> Any:
+        """POST a JSON payload to the info endpoint and return the parsed body.
+
+        Centralizes the POST + raise_for_status + .json() sequence shared by all
+        data calls, translating raw `requests` transport failures into the
+        Hyperliquid error taxonomy so they reach the webhook retry loop instead
+        of surfacing as unhandled 500s.
+        """
+        with translate_request_errors(f"data_client POST {payload.get('type', '?')}"):
+            resp = requests.post(self.info_url, json=payload, timeout=timeout)
+            resp.raise_for_status()
+            return resp.json()
+
     def _fetch_meta_and_asset_ctxs(self) -> Tuple[list[Dict[str, Any]], list[Dict[str, Any]]]:
         """Fetch the latest meta universe and asset contexts."""
-        resp = requests.post(
-            self.info_url,
-            json={"type": "metaAndAssetCtxs"},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = self._post({"type": "metaAndAssetCtxs"})
         return data[0]["universe"], data[1]
 
     def _get_ctx(self, symbol: str) -> Dict[str, Any]:

@@ -10,6 +10,7 @@ from eth_account import Account
 from hyperliquid.exchange import Exchange
 from hypertrade.config import get_settings
 from .hyperliquid_data_client import HyperliquidDataClient
+from .hyperliquid_errors import translate_request_errors
 
 log = logging.getLogger("uvicorn.error")
 
@@ -96,15 +97,16 @@ class HyperliquidExecutionClient:
         is_buy = side == PositionSide.LONG
         norm_price = self._normalize_price(symbol, price, is_buy=is_buy)
 
-        res = self.exchange.order(
-            symbol,          # ← positional: coin
-            is_buy,          # ← positional
-            size,            # ← positional: sz
-            norm_price,      # ← positional: limit_px
-            {"limit": {"tif": tif}},
-            reduce_only,
-            cloid,
-        )
+        with translate_request_errors("limit_order"):
+            res = self.exchange.order(
+                symbol,          # ← positional: coin
+                is_buy,          # ← positional
+                size,            # ← positional: sz
+                norm_price,      # ← positional: limit_px
+                {"limit": {"tif": tif}},
+                reduce_only,
+                cloid,
+            )
         return self._extract_oid_and_status(res)
 
     def market_order(
@@ -123,23 +125,25 @@ class HyperliquidExecutionClient:
         aggressive_px = self._aggressive_price_from_impact(symbol, is_buy=is_buy, premium_bps=premium)
         norm_px = self._normalize_price(symbol, aggressive_px, is_buy=is_buy)
 
-        return self.exchange.order(
-            symbol,
-            is_buy,
-            size,
-            norm_px,
-            {"limit": {"tif": "Ioc"}},
-            reduce_only,
-            cloid,
-        )
-    
+        with translate_request_errors("market_order"):
+            return self.exchange.order(
+                symbol,
+                is_buy,
+                size,
+                norm_px,
+                {"limit": {"tif": "Ioc"}},
+                reduce_only,
+                cloid,
+            )
+
     def market_close(
         self,
         symbol: str,
     ) -> Dict[str, Any]:
         """Close entire position in one official call"""
-        
-        return self.exchange.market_close(symbol, None)
+
+        with translate_request_errors("market_close"):
+            return self.exchange.market_close(symbol, None)
 
     def close_position(
         self,
@@ -192,7 +196,8 @@ class HyperliquidExecutionClient:
         """
         if status == OrderStatus.RESTING:
             log.info("Cancelling resting order %s on %s", oid, symbol)
-            return self.exchange.cancel(symbol, oid)
+            with translate_request_errors("cancel"):
+                return self.exchange.cancel(symbol, oid)
         
         elif status == OrderStatus.FILLED:
             log.info(
@@ -208,7 +213,8 @@ class HyperliquidExecutionClient:
         
     def update_leverage(self, leverage: int, symbol: str) -> dict:
         """Update leverage for a given symbol."""
-        return self.exchange.update_leverage(leverage, symbol)
+        with translate_request_errors("update_leverage"):
+            return self.exchange.update_leverage(leverage, symbol)
 
     # ===================================================================
     # Internal helpers

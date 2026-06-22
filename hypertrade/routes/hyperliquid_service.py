@@ -10,6 +10,12 @@ from typing import Optional
 from hypertrade.config import get_settings
 from .tradingview_enums import Side, SignalType
 from .hyperliquid_execution_client import HyperliquidExecutionClient, PositionSide
+from .hyperliquid_errors import (
+    HyperliquidError,
+    HyperliquidNetworkError,
+    HyperliquidValidationError,
+    HyperliquidAPIError,
+)
 
 log = logging.getLogger("uvicorn.error")
 
@@ -41,18 +47,6 @@ class OrderResult:
     reduce_only: bool
     post_only: bool
     client_id: Optional[str]
-
-class HyperliquidError(Exception):
-    """Base exception for Hyperliquid client errors."""
-
-class HyperliquidNetworkError(HyperliquidError):
-    """Raised for network-related errors (transient failures, can retry)."""
-
-class HyperliquidValidationError(HyperliquidError):
-    """Raised for validation errors (bad input, won't retry)."""
-
-class HyperliquidAPIError(HyperliquidError):
-    """Raised for API-level errors from Hyperliquid."""
 
 class HyperliquidService:
     """Thin wrapper around the Hyperliquid SDK/API.
