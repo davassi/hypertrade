@@ -104,6 +104,10 @@ class Settings(BaseSettings):
     # Idempotency (at-most-once order placement keyed on general.nonce)
     idempotency_enabled: bool = True
     idempotency_inflight_timeout: int = 60  # seconds before an in_progress reservation is reclaimable
+    # Sweep completed nonces older than this so the dedup index stays bounded.
+    # A completed nonce only needs to outlive retries (seconds/minutes); 7 days
+    # is a generous safety margin. Must be >= 60s to never race the in-flight window.
+    idempotency_retention_seconds: int = 604800  # 7 days
 
     # Dry-run / demo: accept and fully validate webhooks but never place orders,
     # write to the DB, touch the idempotency store, or send Telegram messages.
@@ -155,6 +159,14 @@ class Settings(BaseSettings):
         """Must keep at least one row; <= 0 would delete everything on insert."""
         if value < 1:
             raise ValueError("max_history_rows must be at least 1")
+        return value
+
+    @field_validator("idempotency_retention_seconds")
+    @classmethod
+    def _validate_idempotency_retention_seconds(cls, value: int) -> int:
+        """Keep completed nonces long enough to dedupe retries safely."""
+        if value < 60:
+            raise ValueError("idempotency_retention_seconds must be at least 60")
         return value
 
     @model_validator(mode="after")

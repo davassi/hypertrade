@@ -6,13 +6,17 @@ failure (the nonce becomes reservable again so a retry can re-attempt).
 """
 
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
 from hypertrade import sqlite_util
+from hypertrade.config import get_settings
+
+log = logging.getLogger("uvicorn.error")
 
 
 class ReserveOutcome(Enum):
@@ -65,12 +69,45 @@ class IdempotencyStore:
                 )
                 """
             )
+            # Supports the age-based sweep of completed nonces (see _sweep_completed).
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_idempotency_status_completed_at "
+                "ON idempotency_keys (status, completed_at)"
+            )
             conn.commit()
+        finally:
+            conn.close()
+
+    def _sweep_completed(self) -> None:
+        """Delete completed nonces older than the configured retention window.
+
+        Mirrors the trim-on-insert cap used for orders/failures: a completed
+        nonce only needs to outlive retries, so old ones can be reclaimed by age
+        to keep the dedup index bounded. Sweeps status='completed' ONLY — stale
+        'in_progress' rows are reclaimed by reserve()'s in-flight path, never here.
+        """
+        retention_s = get_settings().idempotency_retention_seconds
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=retention_s)).isoformat()
+        conn = self._get_connection()
+        try:
+            with conn:
+                conn.execute(
+                    "DELETE FROM idempotency_keys "
+                    "WHERE status = 'completed' AND completed_at IS NOT NULL "
+                    "AND completed_at < ?",
+                    (cutoff,),
+                )
         finally:
             conn.close()
 
     def reserve(self, nonce: str, request_id: str, inflight_timeout_s: int) -> ReserveResult:
         now = _now_iso()
+        # Opportunistic, best-effort sweep so the dedup index stays bounded.
+        # A sweep failure must NEVER block order placement — log and continue.
+        try:
+            self._sweep_completed()
+        except sqlite3.Error as exc:
+            log.warning("Idempotency sweep failed (nonce=%s): %s", nonce, exc)
         conn = self._get_connection()
         try:
             with conn:  # single transaction
