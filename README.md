@@ -58,14 +58,18 @@ pip install fastapi uvicorn[standard] pydantic pydantic-settings python-dotenv j
 
 ## Run
 
-Run via Uvicorn or module entrypoint
+Run via Uvicorn directly:
 
 ```bash
 uvicorn hypertrade.daemon:app --host 0.0.0.0 --port 6487
 ```
 
+Or use the bundled launchers, which load secrets from [`pass`](https://www.passwordstore.org/),
+select the Hyperliquid endpoint, and run the guided setup on first use:
+
 ```bash
-python -m hypertrade
+./hypertrade-test.sh   # testnet, port 6488
+./hypertrade-prod.sh   # mainnet, port 6487
 ```
 
 ### Guided setup (recommended for first run)
