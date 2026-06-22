@@ -16,17 +16,6 @@ code before acting.
 
 ## Open
 
-### Correctness
-
-- **[TD-2] Domain `ValueError`/`KeyError` bypass the error taxonomy** (`P1`) —
-  symbol-not-found (`hyperliquid_data_client._symbol_to_idx`), missing
-  `withdrawable` (`get_available_balance`), and the response-parsing chain
-  `res["response"]["data"]["statuses"][0]` in `hyperliquid_service.py` raise raw
-  exceptions that escape `_place_order_with_retry` → unhandled 500 instead of
-  400/validation. *Fix:* map the user-facing ones to
-  `HyperliquidValidationError` / `HyperliquidAPIError`. (Follow-up to `a8facf4`,
-  which covered only transport errors.)
-
 ### Concurrency / scale
 
 - **[TD-3] Rate limiter is per-process** (`P1`) —
@@ -99,6 +88,9 @@ code before acting.
 
 ## Resolved
 
+- 2026-06-22 `25cf438` — **TD-2**: domain errors mapped into the taxonomy —
+  unknown symbol → `HyperliquidValidationError` (400), malformed exchange
+  response → `HyperliquidAPIError` (502); no more raw 500s on the order path.
 - 2026-06-22 `d01076b` — **Telegram feature removed** (unused): deleted the
   notification path + the `/admin/telegram` runtime-reconfig endpoint and dropped
   the `pyTelegramBotAPI` dependency. Moots **TD-5** (narrow Telegram exception
