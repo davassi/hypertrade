@@ -1,7 +1,7 @@
 """Logging utilities: configure Uvicorn-compatible logs and startup banner."""
 
 import logging as pylog
-from typing import Iterable, Optional, List
+from typing import Iterable, Optional
 
 try:  # FastAPI might not be installed in lint-only environments
     from fastapi.routing import APIRoute
@@ -29,19 +29,6 @@ def configure_logging(log_level: str = "INFO") -> None:
 
     # Configure app logger
     pylog.getLogger("hypertrade").setLevel(level)
-
-# pylint: disable=too-few-public-methods
-class _MessageFilter(pylog.Filter):
-    def __init__(self, *, deny_contains: Optional[List[str]] = None):
-        super().__init__()
-        self.deny_contains = deny_contains or []
-
-    def filter(self, record: pylog.LogRecord) -> bool:  # True -> keep
-        msg = record.getMessage()
-        for frag in self.deny_contains:
-            if frag in msg:
-                return False
-        return True
 
 # pylint: disable=too-many-arguments
 def log_startup_banner(

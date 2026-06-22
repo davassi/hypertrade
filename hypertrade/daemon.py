@@ -22,6 +22,7 @@ from .routes.admin import router as admin_router
 from .notify import send_telegram_message
 from .exception_handlers import register_exception_handlers
 from .database import OrderDatabase
+from .version import __version__
 
 log = logging.getLogger("uvicorn.error")
 
@@ -105,7 +106,7 @@ def create_daemon() -> FastAPI:
     """Create and configure the FastAPI app."""
 
     # Create app first so we can attach settings or fail cleanly
-    app = FastAPI(title="Hypertrade Daemon", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Hypertrade Daemon", version=__version__, lifespan=lifespan)
 
     # Load settings and configure logging; provide clear error if env missing
     try:
@@ -210,6 +211,7 @@ def create_daemon() -> FastAPI:
         whitelist_enabled=settings.ip_whitelist_enabled,
         whitelist_ips=settings.tv_webhook_ips,
         trust_xff=settings.trust_forwarded_for,
+        version=__version__,
     )
 
     # Setting the Routers up

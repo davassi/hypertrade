@@ -1,7 +1,6 @@
 """Exception handlers for FastAPI app with concise JSON responses."""
 
 import logging as pylog
-from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -10,11 +9,6 @@ from fastapi.encoders import jsonable_encoder
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = pylog.getLogger("uvicorn.error")
-
-def _extract_request_id(response_headers: Optional[dict[str, str]]) -> Optional[str]:
-    if not response_headers:
-        return None
-    return response_headers.get("X-Request-ID")
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handle Starlette HTTP exceptions uniformly."""

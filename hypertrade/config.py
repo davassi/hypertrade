@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     """Runtime settings loaded from env/.env with validation."""
 
     # ── Core ─────────────────────────────────────
-    app_name: str = "Hypertrade Daemon"
     app_environment: str = "local"
     environment: str  # REQUIRED: must be "prod" or "test" (Hyperliquid API endpoint)
     listen_host: str = "0.0.0.0"
@@ -64,9 +63,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Reduce noisy logs from random scanners
-    suppress_access_logs: bool = False
     suppress_404_logs: bool = True
-    suppress_invalid_http_warnings: bool = True
 
     # Rate limiting (basic in-memory, per-IP)
     rate_limit_enabled: bool = True

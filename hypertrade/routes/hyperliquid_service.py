@@ -55,10 +55,12 @@ class HyperliquidAPIError(HyperliquidError):
     """Raised for API-level errors from Hyperliquid."""
 
 class HyperliquidService:
-    """Thin wrapper around Hyperliquid SDK/API.
+    """Thin wrapper around the Hyperliquid SDK/API.
 
-    Currently operates in mock mode by default. Replace the internals of
-    `_send_order` with real SDK calls when wiring up credentials.
+    Builds a `HyperliquidExecutionClient` against the live Hyperliquid API URL
+    (derived from settings, or an explicit `base_url`) and places real orders
+    through it via the Hyperliquid SDK. `place_order` fetches fresh market data,
+    validates/sets leverage, sizes the order, and submits it to the exchange.
     """
 
     def __init__(
@@ -81,12 +83,13 @@ class HyperliquidService:
             master_addr, subaccount_addr or "(not set)"
         )
 
+        # Premium is always passed explicitly from settings at place_order() call
+        # time, so no default_premium_bps is set here.
         self.client = HyperliquidExecutionClient(
             private_key=api_wallet_priv,
             account_address=master_addr,
             vault_address=subaccount_addr,
             base_url=self.base_url,
-            default_premium_bps=5.0,
         )
 
         # Log which account will be used for trading
