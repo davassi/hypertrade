@@ -112,14 +112,13 @@ class HyperliquidService:
         mark_price = (self.client.data.get_mark(symbol))
 
         meta = self.client.data.get_meta(symbol)
-        available = self.client.data.get_available_balance()
 
         max_leverage = meta.get("maxLeverage", 1)
         sz_decimals = int(meta.get("szDecimals", 3))
 
         log.info(
-            "Market data retrieved: symbol=%s mid_price=%.6f mark_price=%.6f available_balance=%.2f max_leverage=%sx sz_decimals=%s",
-            symbol, mid_price, mark_price, available, max_leverage, sz_decimals
+            "Market data retrieved: symbol=%s mid_price=%.6f mark_price=%.6f max_leverage=%sx sz_decimals=%s",
+            symbol, mid_price, mark_price, max_leverage, sz_decimals
         )
 
         # ===================================================================
@@ -148,9 +147,9 @@ class HyperliquidService:
         # wants to hold. Leverage is applied by the exchange via update_leverage
         # above — it must NOT also multiply the order size, or the resulting
         # exposure would be leverage^2. Round to the asset's size decimals.
-        # NOTE: there is no balance cap here yet; `available` (fetched above) is
-        # not used to constrain size. Adding an ~85%-of-available cap is a known
-        # follow-up.
+        # NOTE: this executor applies no balance cap — constraining size to
+        # available margin is the strategy bot's responsibility, not this thin
+        # executor's.
         size = round(request.qty, sz_decimals)
         log.debug("Position size calculated: contracts=%s leverage=%sx size=%s sz_decimals=%s", request.qty, leverage, size, sz_decimals)
 

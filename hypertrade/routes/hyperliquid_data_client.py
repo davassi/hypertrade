@@ -1,4 +1,6 @@
-"""Hyperliquid REST data client without caching."""
+"""Hyperliquid REST data client with per-instance (request-scoped) memoization
+of the meta/asset-ctx snapshot.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +16,13 @@ log = logging.getLogger("uvicorn.error")
 class HyperliquidDataClient:
     """
     Lightweight REST-first data client for Hyperliquid.
+
+    The meta universe and asset-context snapshot is memoized per instance: the
+    first getter that needs it performs one `metaAndAssetCtxs` POST, and every
+    subsequent getter on the same instance reuses that snapshot. Because the
+    client is constructed per order / per request (see HyperliquidExecutionClient
+    and routes/webhooks.py), this memo is request-scoped — there is intentionally
+    no TTL, invalidation, or cross-instance cache.
     """
 
     def __init__(
@@ -29,6 +38,12 @@ class HyperliquidDataClient:
 
         self.info_url = base_url.rstrip("/") + "/info"
         self.account_address = account_address or settings.master_addr
+
+        # Per-instance (request-scoped) memo of (universe, asset_ctxs). Populated
+        # only on a successful metaAndAssetCtxs fetch; never invalidated.
+        self._meta_cache: Optional[
+            Tuple[list[Dict[str, Any]], list[Dict[str, Any]]]
+        ] = None
 
         log.debug("HyperliquidDataClient initialized | Base URL: %s", self.info_url)
 
@@ -115,9 +130,17 @@ class HyperliquidDataClient:
             return resp.json()
 
     def _fetch_meta_and_asset_ctxs(self) -> Tuple[list[Dict[str, Any]], list[Dict[str, Any]]]:
-        """Fetch the latest meta universe and asset contexts."""
-        data = self._post({"type": "metaAndAssetCtxs"})
-        return data[0]["universe"], data[1]
+        """Return the meta universe and asset contexts, memoized per instance.
+
+        The first call performs one `metaAndAssetCtxs` POST and caches the result
+        on this instance; subsequent calls reuse it at no network cost. The cache
+        is only written on a successful fetch — if `_post` raises (transport or
+        HTTP error), nothing is stored and the next call retries.
+        """
+        if self._meta_cache is None:
+            data = self._post({"type": "metaAndAssetCtxs"})
+            self._meta_cache = (data[0]["universe"], data[1])
+        return self._meta_cache
 
     def _get_ctx(self, symbol: str) -> Dict[str, Any]:
         """Fetch the asset context for a symbol."""

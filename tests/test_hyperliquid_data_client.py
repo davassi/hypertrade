@@ -81,3 +81,59 @@ def test_timeout_on_balance_becomes_network_error(monkeypatch):
 
     with pytest.raises(HyperliquidNetworkError):
         client.get_available_balance("0xM")
+
+
+class _CountingPost:
+    """Fake `requests.post` that counts metaAndAssetCtxs POSTs and returns a
+    realistic meta/asset-ctx payload.
+    """
+
+    def __init__(self) -> None:
+        self.meta_calls = 0
+
+    def __call__(self, _url, json=None, timeout=None):  # noqa: A002 - mirror requests API
+        if json is not None and json.get("type") == "metaAndAssetCtxs":
+            self.meta_calls += 1
+
+        class _Resp:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> list:
+                return [
+                    {"universe": [{"name": "BTC", "szDecimals": 3, "maxLeverage": 50}]},
+                    [{"impactPxs": ["100", "101"], "midPx": "100.5", "markPx": "100.4"}],
+                ]
+
+        return _Resp()
+
+
+def test_meta_fetch_memoized_per_instance(monkeypatch):
+    """Multiple meta/ctx getters on ONE instance trigger a single network fetch."""
+    fake_post = _CountingPost()
+    monkeypatch.setattr(
+        "hypertrade.routes.hyperliquid_data_client.requests.post", fake_post
+    )
+
+    client = _client(monkeypatch)
+    client.get_meta("BTC")
+    client.get_impact_prices("BTC")
+    client.get_mid("BTC")
+
+    assert fake_post.meta_calls == 1
+
+
+def test_meta_memo_is_per_instance_not_global(monkeypatch):
+    """A fresh instance re-fetches; the memo does not leak across instances."""
+    fake_post = _CountingPost()
+    monkeypatch.setattr(
+        "hypertrade.routes.hyperliquid_data_client.requests.post", fake_post
+    )
+
+    first = _client(monkeypatch)
+    first.get_meta("BTC")
+    assert fake_post.meta_calls == 1
+
+    second = _client(monkeypatch)
+    second.get_meta("BTC")
+    assert fake_post.meta_calls == 2
