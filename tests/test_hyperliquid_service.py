@@ -68,3 +68,52 @@ def test_reduce_signal_forwards_reduce_only_to_market_order(monkeypatch):
     ))
     _, kwargs = client.market_order.call_args
     assert kwargs.get("reduce_only") is True
+
+
+def test_cloid_forwarded_to_market_order(monkeypatch):
+    """The OrderRequest.cloid must be threaded down to the execution client so the
+    submitted order carries the deterministic client order id."""
+    svc, client = _service(monkeypatch)
+    svc.place_order(OrderRequest(
+        symbol="SOL", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("1"), price=Decimal("100"), leverage=1,
+        cloid="0x" + "a" * 32,
+    ))
+    _, kwargs = client.market_order.call_args
+    assert kwargs.get("cloid") == "0x" + "a" * 32
+
+
+def test_cloid_forwarded_to_close_position(monkeypatch):
+    """Closing orders must also carry the cloid for idempotent resubmission."""
+    svc, client = _service(monkeypatch)
+    svc.place_order(OrderRequest(
+        symbol="SOL", side=Side.SELL, signal=SignalType.CLOSE_LONG,
+        qty=Decimal("1"), price=Decimal("100"), leverage=1,
+        cloid="0x" + "b" * 32,
+    ))
+    _, kwargs = client.close_position.call_args
+    assert kwargs.get("cloid") == "0x" + "b" * 32
+
+
+# ===================================================================
+# find_order_by_cloid: query the exchange for an already-placed order
+# ===================================================================
+
+def test_find_order_by_cloid_returns_order_when_found(monkeypatch):
+    """When the exchange reports {"status": "order", ...} the method returns the
+    payload so the caller can avoid a duplicate submission."""
+    svc, client = _service(monkeypatch)
+    found = {"status": "order", "order": {"order": {"oid": 99}}}
+    client.find_order_by_cloid.return_value = found
+    # Delegate through the service to the execution client.
+    svc.client.find_order_by_cloid.return_value = found
+    result = svc.find_order_by_cloid("0x" + "c" * 32)
+    assert result == found
+
+
+def test_find_order_by_cloid_returns_none_when_absent(monkeypatch):
+    """When the exchange reports it does not know the order, return None."""
+    svc, client = _service(monkeypatch)
+    client.find_order_by_cloid.return_value = None
+    result = svc.find_order_by_cloid("0x" + "d" * 32)
+    assert result is None

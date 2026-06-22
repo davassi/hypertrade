@@ -33,6 +33,10 @@ class OrderRequest:
     client_id: Optional[str] = None
     leverage: Optional[int] = None
     subaccount: Optional[str] = None
+    # Deterministic client order id (cloid). Derived from the request nonce/req_id
+    # by the webhook layer so that a retry of the same request reuses the same
+    # cloid, letting us query the exchange for it before resubmitting (TD-1).
+    cloid: Optional[str] = None
 
 @dataclass
 class OrderResult:
@@ -175,6 +179,7 @@ class HyperliquidService:
                 side=_signal_to_position_side(request.signal),
                 size=size,
                 premium_bps=premium,
+                cloid=request.cloid,
             )
         else:
             log.debug("Opening/adding position: symbol=%s side=%s size=%s", symbol, request.side, size)
@@ -184,6 +189,7 @@ class HyperliquidService:
                 size=size,
                 premium_bps=premium,
                 reduce_only=request.reduce_only,
+                cloid=request.cloid,
             )
         
         # Safe printing – handle both filled and error cases
@@ -199,6 +205,27 @@ class HyperliquidService:
                 log.info("Order submitted: symbol=%s status=%s", symbol, status)
 
         return res
+
+    def find_order_by_cloid(self, cloid: str) -> Optional[dict]:
+        """Return the exchange's record of the order with ``cloid``, or None.
+
+        Used by the webhook retry loop (TD-1) to check, BEFORE resubmitting, that
+        a prior submission did not already land. The query runs against the
+        trading account that the order was placed on — the subaccount/vault if one
+        is configured, otherwise the master account — matching how the SDK's
+        ``query_order_by_cloid`` keys lookups by ``user``.
+
+        Returns:
+            The order payload when the exchange reports the order exists, else
+            None when it reports the order is unknown.
+
+        Raises:
+            HyperliquidNetworkError / HyperliquidAPIError: if the query transport
+                fails. The caller MUST treat this as "cannot confirm" and refuse
+                to resubmit, since a duplicate real order is the worse outcome.
+        """
+        user = self.subaccount_addr or self.client.account_address
+        return self.client.find_order_by_cloid(cloid, user=user)
 
 def _to_position_side(side: Side) -> PositionSide:
     """Convert TradingView Side enum (buy/sell) into Hyperliquid PositionSide."""

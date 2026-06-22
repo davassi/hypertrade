@@ -6,8 +6,10 @@ from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
 from enum import Enum
 from typing import Literal, Any, Dict, Optional, Tuple
 
+import requests
 from eth_account import Account
 from hyperliquid.exchange import Exchange
+from hyperliquid.utils.types import Cloid
 from hypertrade.config import get_settings
 from .hyperliquid_data_client import HyperliquidDataClient
 from .hyperliquid_errors import translate_request_errors
@@ -71,6 +73,11 @@ class HyperliquidExecutionClient:
         )
         self.data = HyperliquidDataClient(account_address=account_address, base_url=base_url)
         self.default_premium_bps = float(default_premium_bps)
+        # Retained for the cloid idempotency query (find_order_by_cloid): the
+        # order-status lookup must be keyed by the account the order was placed on.
+        self.account_address = account_address
+        self.vault_address = vault_address
+        self.info_url = base_url.rstrip("/") + "/info"
 
         log.debug(
             "Initialized HyperliquidExecutionClient | Wallet: %s | Vault: %s | Premium: %.1f bps",
@@ -105,7 +112,7 @@ class HyperliquidExecutionClient:
                 norm_price,      # ← positional: limit_px
                 {"limit": {"tif": tif}},
                 reduce_only,
-                cloid,
+                self._to_cloid(cloid),
             )
         return self._extract_oid_and_status(res)
 
@@ -133,7 +140,7 @@ class HyperliquidExecutionClient:
                 norm_px,
                 {"limit": {"tif": "Ioc"}},
                 reduce_only,
-                cloid,
+                self._to_cloid(cloid),
             )
 
     def market_close(
@@ -216,9 +223,58 @@ class HyperliquidExecutionClient:
         with translate_request_errors("update_leverage"):
             return self.exchange.update_leverage(leverage, symbol)
 
+    def find_order_by_cloid(self, cloid: str, user: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Query the exchange for an order by client order id (cloid).
+
+        Mirrors the SDK's ``Info.query_order_by_cloid``: it POSTs
+        ``{"type": "orderStatus", "user": <user>, "oid": <cloid raw str>}`` to the
+        ``/info`` endpoint. Hyperliquid replies with ``{"status": "order", ...}``
+        when the order exists and ``{"status": "unknownOid"}`` when it does not.
+
+        Args:
+            cloid: The "0x"+32-hex client order id string the order was submitted
+                with.
+            user: The account the order was placed on. Defaults to the vault
+                address if configured, else the master account address.
+
+        Returns:
+            The full response payload when the order exists, else None when the
+            exchange reports it is unknown.
+
+        Raises:
+            HyperliquidNetworkError / HyperliquidAPIError: on transport failure.
+                Callers MUST treat this as "cannot confirm" and not resubmit.
+        """
+        # Validate/normalize the cloid via the SDK's Cloid so we POST exactly the
+        # raw form the exchange indexes by (and reject a malformed cloid early).
+        raw_cloid = Cloid.from_str(cloid).to_raw()
+        lookup_user = user or self.vault_address or self.account_address
+        payload = {"type": "orderStatus", "user": lookup_user, "oid": raw_cloid}
+
+        with translate_request_errors("find_order_by_cloid"):
+            resp = requests.post(self.info_url, json=payload, timeout=5)
+            resp.raise_for_status()
+            data = resp.json()
+
+        # "unknownOid" (or any non-"order" status) means the order never landed.
+        if isinstance(data, dict) and data.get("status") == "order":
+            return data
+        return None
+
     # ===================================================================
     # Internal helpers
     # ===================================================================
+
+    @staticmethod
+    def _to_cloid(cloid: Optional[str]) -> Optional[Cloid]:
+        """Convert a cloid string into the SDK's Cloid object (None passes through).
+
+        The SDK's ``exchange.order`` expects a ``Cloid`` instance, not a raw
+        string; passing the raw string silently produces an invalid order wire.
+        """
+        if not cloid:
+            return None
+        return Cloid.from_str(cloid)
 
     @staticmethod
     def _extract_oid_and_status(res: Dict[str, Any]) -> Tuple[int, OrderStatus]:

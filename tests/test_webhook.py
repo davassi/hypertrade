@@ -55,9 +55,19 @@ class StubHyperliquidService:
     should_fail = False
     failure_type = None
     call_count = 0
+    # TD-1 query-before-resubmit: the retry loop asks the service whether the
+    # order already landed under its cloid before resubmitting. The default
+    # (None) means "confirmed absent", so the persistent-failure tests below
+    # exercise the full retry-then-fail path rather than short-circuiting.
+    find_order_result = None
+    find_order_calls = 0
 
     def __init__(self, *args, **kwargs):
         pass
+
+    def find_order_by_cloid(self, cloid):
+        type(self).find_order_calls += 1
+        return type(self).find_order_result
 
     def place_order(self, request):
         type(self).last_order_request = request
@@ -95,6 +105,8 @@ class StubHyperliquidService:
         cls.should_fail = False
         cls.failure_type = None
         cls.call_count = 0
+        cls.find_order_result = None
+        cls.find_order_calls = 0
 
 
 def make_app(monkeypatch, *, secret: str | None = None):

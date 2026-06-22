@@ -1,6 +1,7 @@
 """TradingView webhook endpoint: validate, parse and respond."""
 
 import asyncio
+import hashlib
 import logging
 import hmac
 import sqlite3
@@ -37,23 +38,68 @@ router = APIRouter(tags=["webhooks"])
 history_router = APIRouter(tags=["history"], dependencies=[Depends(require_bearer_secret)])
 log = logging.getLogger("uvicorn.error")
 
+def _derive_cloid(seed: str) -> str:
+    """Derive a deterministic Hyperliquid client order id (cloid) from a seed.
+
+    The seed is the request nonce (or, falling back, the request id): it is
+    stable across that request's retries AND identical if the very same nonce is
+    re-sent later, so the exchange dedupes a duplicate submission by cloid.
+
+    Returns a valid cloid per the SDK's ``Cloid`` contract: ``"0x"`` followed by
+    exactly 32 hex chars (16 bytes) — here the first 16 bytes of the SHA-256 of
+    the seed.
+    """
+    return "0x" + hashlib.sha256(seed.encode()).hexdigest()[:32]
+
+
 async def _place_order_with_retry(client: HyperliquidService, order_request: OrderRequest, max_retries: int = 2) -> dict:
-    """Attempt to place an order with exponential backoff for transient failures.
+    """Place an order with backoff, querying-before-resubmit to avoid duplicates.
+
+    TD-1: the order submission carries a deterministic cloid (set on
+    ``order_request.cloid`` by the caller). On any RETRY, before resubmitting we
+    ask the exchange whether the order already landed under that cloid:
+
+      * query raises (network/API) -> re-raise, do NOT resubmit (cannot confirm —
+        a duplicate real order is the worse outcome).
+      * query returns a found order -> return a result referencing it, do NOT
+        resubmit.
+      * query returns None (confirmed absent) -> resubmit.
+
+    If ``order_request.cloid`` is unset (defensive — the caller always sets one),
+    fall back to the original retry-and-resubmit behavior.
 
     Args:
         client: HyperliquidService instance
-        order_request: Order details
+        order_request: Order details (must carry a deterministic cloid)
         max_retries: Maximum number of retry attempts (excluding first attempt)
 
     Returns:
-        Order result from API
+        Order result from API (or a reference to an already-placed order)
 
     Raises:
         HyperliquidValidationError: For bad input (no retry)
         HyperliquidAPIError: For persistent API failures (retried)
         HyperliquidNetworkError: For network errors (retried)
     """
+    cloid = order_request.cloid
     for attempt in range(max_retries + 1):
+        # Before any RETRY (attempt > 0) carrying a cloid, confirm the order did
+        # not already land under that cloid — never resubmit a possibly-live order.
+        if attempt > 0 and cloid:
+            existing = await asyncio.to_thread(client.find_order_by_cloid, cloid)
+            if existing is not None:
+                log.warning(
+                    "Order already landed under cloid=%s; returning without resubmit",
+                    cloid,
+                )
+                return {
+                    "status": "already_placed",
+                    "orderId": _extract_oid(existing),
+                    "cloid": cloid,
+                    "found_order": existing,
+                }
+            log.info("Exchange confirms cloid=%s absent; resubmitting", cloid)
+
         try:
             # place_order is synchronous and performs blocking network I/O to
             # Hyperliquid; run it off the event loop so concurrent requests
@@ -74,6 +120,18 @@ async def _place_order_with_retry(client: HyperliquidService, order_request: Ord
             else:
                 log.error("Order placement failed after %d attempts", max_retries + 1)
                 raise
+
+
+def _extract_oid(found_order: dict) -> Optional[int]:
+    """Best-effort extraction of the numeric order id from an orderStatus payload.
+
+    Hyperliquid nests it as ``order.order.oid``; tolerate missing keys so logging
+    a found order never raises.
+    """
+    try:
+        return found_order["order"]["order"]["oid"]
+    except (KeyError, TypeError):
+        return None
 
 @router.post(
     "/webhook",
@@ -175,6 +233,14 @@ async def hypertrade_webhook(
     # REDUCE signals should only reduce existing positions, not open new ones
     reduce_only = signal in {SignalType.REDUCE_LONG, SignalType.REDUCE_SHORT}
 
+    # Deterministic cloid (TD-1): stable across this request's retries and across a
+    # re-send of the SAME nonce, so the exchange dedupes a duplicate submission and
+    # the retry loop can query-before-resubmit. Seed from nonce (preferred) or the
+    # request id (always present) so a cloid is always available.
+    req_id = getattr(request.state, "request_id", None)
+    cloid_seed = nonce or req_id
+    cloid = _derive_cloid(cloid_seed) if cloid_seed else None
+
     # Execute plugging into Hyperliquid SDK.
     order_request = OrderRequest(
         symbol=symbol,
@@ -187,6 +253,7 @@ async def hypertrade_webhook(
         client_id=None,
         leverage=leverage,
         subaccount=vault_address,
+        cloid=cloid,
     )
 
     log.debug(
