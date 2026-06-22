@@ -9,24 +9,14 @@ the strategy bot and are intentionally absent here.
 **Severity:** `P0` correctness on the money path under load · `P1` should fix ·
 `P2` cleanup / hygiene.
 
-Entries are point-in-time observations from the 2026-06-22 audit — verify file
-references against current code before acting.
+Entries are point-in-time observations — verify file references against current
+code before acting.
 
 ---
 
 ## Open
 
 ### Correctness
-
-- **[TD-1] Retry can double-submit an order** (`P1`) —
-  `routes/webhooks.py` `_place_order_with_retry` retries the whole `place_order`,
-  and `routes/hyperliquid_service.py::place_order` ends in `market_order` /
-  `close_position` called **without a `cloid`**. If the order reaches the
-  exchange but the reply times out, a retry submits a *second* order; the nonce
-  guard only dedupes across separate requests, not within one. `close_position`
-  also has its own nested `time.sleep(2)` + retry, unaware of the outer loop.
-  *Fix:* derive a deterministic `cloid` from the nonce (exchange-side
-  idempotency), or retry only the read-only pre-trade phase.
 
 - **[TD-2] Domain `ValueError`/`KeyError` bypass the error taxonomy** (`P1`) —
   symbol-not-found (`hyperliquid_data_client._symbol_to_idx`), missing
@@ -37,6 +27,18 @@ references against current code before acting.
   `HyperliquidValidationError` / `HyperliquidAPIError`. (Follow-up to `a8facf4`,
   which covered only transport errors.)
 
+- **[TD-17] `close_position` escalation retry reuses the same cloid** (`P1`) —
+  introduced alongside TD-1 (`2c27b08`). When the first reduce-only IOC "could
+  not immediately match", `hyperliquid_execution_client.py::close_position`
+  sleeps 2s and recursively resubmits at 3× premium with the **same cloid**. If
+  Hyperliquid rejects a duplicate cloid (even for a cancelled IOC), the
+  escalation is rejected and the close silently fails to escalate while still
+  returning 200. Conditional on HL's dup-cloid semantics for cancelled orders
+  (unverified). *Fix:* rework the nested retry to coexist with cloid idempotency
+  — e.g. a distinct sub-cloid per escalation attempt while the outer
+  query-before-resubmit stays keyed on the base cloid, or drop the nested
+  escalation in favor of the outer loop. Money-path on closes — design carefully.
+
 ### Concurrency / scale
 
 - **[TD-3] Rate limiter is per-process** (`P1`) —
@@ -45,12 +47,6 @@ references against current code before acting.
   also never evicts (unbounded memory). The design is single-process.
   *Fix:* document/enforce a single worker and bound/evict the dict. **Not** Redis.
 
-- **[TD-4] `idempotency_keys` grows unbounded** (`P1`) —
-  `idempotency.py` never sweeps *completed* nonces (only `release()` deletes
-  in-progress rows), unlike orders/failures which are capped at
-  `max_history_rows`. Every `reserve()` pays an ever-larger index.
-  *Fix:* TTL/trim sweep on `completed_at`, mirroring the existing trim pattern.
-
 ### Error handling
 
 - **[TD-5] Telegram send swallows only `ApiTelegramException`** (`P1`) —
@@ -58,13 +54,20 @@ references against current code before acting.
   background task, violating its `bool` contract and spewing tracebacks on a
   flaky endpoint. *Fix:* broaden the catch and return `False`.
 
-### Efficiency
-
-- **[TD-6] ~5 redundant `metaAndAssetCtxs` fetches per order** (`P1`) —
-  each `HyperliquidDataClient` getter re-POSTs the full payload; one
-  `place_order` triggers ~5 identical calls (mid/mark/meta + impact + tick), and
-  `mid`/`mark`/`available` are fetched only to log. *Fix:* fetch the context once
-  per order and thread it through; drop the log-only fetches.
+- **[TD-16] Schema-validation 422 hides the offending field** (`P2`) —
+  `routes/webhooks.py::_validate_schema` catches `JSONSchemaValidationError` and
+  re-raises `HTTPException(422, detail="JSON schema validation error")`,
+  discarding the underlying field path and constraint — and it does not log them
+  either, so neither the response nor the server log says *what* failed. An
+  integrator gets an opaque 422 and must re-run the validator offline to find the
+  cause (observed: a 780-payload basket that all 422'd solely on
+  `general.secret` `minLength:1`, an empty-string secret that the sender should
+  have omitted). *Fix:* surface the failing **field path + constraint** only —
+  e.g. `"/".join(map(str, exc.absolute_path))` + `exc.validator` — in `detail`
+  and/or a WARNING log.
+  **Do not** echo `exc.message` or the instance value: schema errors quote the
+  offending value, and `general.secret` is a credential (would leak the secret
+  on a length/format mismatch).
 
 ### Security / hygiene
 
@@ -104,16 +107,10 @@ references against current code before acting.
 
 ### Tests / toolchain
 
-- **[TD-13] Two pre-existing failing tests on `master`** (`P1`, quality) —
-  `tests/test_webhook.py::test_webhook_ip_whitelist_allows_forwarded` (fails with
-  valid env) and `tests/test_health.py` (its `make_app` fixture predates the
-  webhook-auth validator and builds an app with no auth → fails without auth
-  env). *Fix:* repair the fixtures/tests so `master` is green.
-
 - **[TD-14] Suite is env-sensitive and pytest runs only on python3.11** (`P2`) —
-  the repo's `python3` is 3.14 (no pytest); the suite needs `HYPERTRADE_*`
-  exported or `test_health` errors. A real CI gap. *Fix:* a conftest/fixture that
-  sets baseline env, and a pinned/tested interpreter.
+  the repo's `python3` is 3.14 (no pytest); some flows still depend on ambient
+  `HYPERTRADE_*`. A real CI gap. *Fix:* a conftest/fixture that sets baseline env,
+  and a pinned/tested interpreter. (Partly mitigated by TD-13's hermetic fixtures.)
 
 - **[TD-15] Idempotency can't be load-tested in isolation** (`P2`, testability) —
   dry-run returns *before* `reserve()`, so the nonce/dedup path can't be stressed
@@ -124,6 +121,14 @@ references against current code before acting.
 
 ## Resolved
 
+- 2026-06-22 `2c27b08` — **TD-1**: deterministic cloid (from nonce) +
+  query-before-resubmit prevents double-submitting an order on retry.
+- 2026-06-22 `8405351` — **TD-6**: per-order meta fetch memoized (5 → 1
+  `metaAndAssetCtxs` POSTs), dead balance fetch dropped.
+- 2026-06-22 `5ef2dc9` — **TD-4**: completed nonces swept by age, bounding the
+  `idempotency_keys` table.
+- 2026-06-22 `6786201` — **TD-13**: webhook/health test fixtures made hermetic;
+  `master` is green regardless of ambient env.
 - 2026-06-22 `a8facf4` — **P0 #1**: raw `requests` transport errors translated
   into the retry taxonomy (the dead network-retry branch is now reachable).
 - 2026-06-22 `e3f57e1` — **P0 #2**: SQLite `busy_timeout` + WAL via a shared
