@@ -13,7 +13,10 @@ REPO_ROOT = str(pathlib.Path(__file__).resolve().parents[1])
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+import pytest
+
 from hypertrade.routes.hyperliquid_service import HyperliquidService, OrderRequest
+from hypertrade.routes.hyperliquid_errors import HyperliquidAPIError
 from hypertrade.routes.tradingview_enums import Side, SignalType
 
 _FILLED = {"response": {"data": {"statuses": [{"filled": {"avgPx": "100", "totalSz": "1"}}]}}}
@@ -93,6 +96,43 @@ def test_cloid_forwarded_to_close_position(monkeypatch):
     ))
     _, kwargs = client.close_position.call_args
     assert kwargs.get("cloid") == "0x" + "b" * 32
+
+
+# ===================================================================
+# Malformed (non-None) order response -> HyperliquidAPIError (TD-2 (B))
+# ===================================================================
+
+def test_happy_path_returns_well_formed_filled_response(monkeypatch):
+    """The existing happy path (a well-formed filled response) still returns res."""
+    svc, client = _service(monkeypatch)
+    res = svc.place_order(OrderRequest(
+        symbol="SOL", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("1"), price=Decimal("100"), leverage=1,
+    ))
+    assert res is _FILLED
+
+
+def test_malformed_market_order_response_raises_api_error(monkeypatch):
+    """A non-None but malformed exchange response must surface as
+    HyperliquidAPIError (taxonomy), not a raw KeyError that escapes to a 500."""
+    svc, client = _service(monkeypatch)
+    client.market_order.return_value = {"unexpected": 1}
+    with pytest.raises(HyperliquidAPIError):
+        svc.place_order(OrderRequest(
+            symbol="SOL", side=Side.BUY, signal=SignalType.OPEN_LONG,
+            qty=Decimal("1"), price=Decimal("100"), leverage=1,
+        ))
+
+
+def test_malformed_close_position_response_raises_api_error(monkeypatch):
+    """The close path must apply the same defensive parsing as the open path."""
+    svc, client = _service(monkeypatch)
+    client.close_position.return_value = {"unexpected": 1}
+    with pytest.raises(HyperliquidAPIError):
+        svc.place_order(OrderRequest(
+            symbol="SOL", side=Side.SELL, signal=SignalType.CLOSE_LONG,
+            qty=Decimal("1"), price=Decimal("100"), leverage=1,
+        ))
 
 
 # ===================================================================

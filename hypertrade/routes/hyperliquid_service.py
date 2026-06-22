@@ -197,7 +197,11 @@ class HyperliquidService:
             log.error("Order execution failed: symbol=%s side=%s size=%s (no response from API)", symbol, request.side, size)
             raise HyperliquidAPIError("Order Creation did not work")
         else:
-            status = res["response"]["data"]["statuses"][0]
+            try:
+                status = res["response"]["data"]["statuses"][0]
+            except (KeyError, TypeError, IndexError) as exc:
+                log.error("Unexpected order response shape: symbol=%s response=%s", symbol, res)
+                raise HyperliquidAPIError(f"Unexpected order response shape: {res}") from exc
             if "filled" in status:
                 st = status["filled"]
                 log.info("Order filled successfully: symbol=%s size=%s avg_price=%s total_sz=%s", symbol, size, st["avgPx"], st["totalSz"])

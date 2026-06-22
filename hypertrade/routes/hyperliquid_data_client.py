@@ -9,7 +9,7 @@ from typing import Any, Dict, Tuple, Optional
 
 import requests
 from hypertrade.config import get_settings
-from .hyperliquid_errors import translate_request_errors
+from .hyperliquid_errors import HyperliquidValidationError, translate_request_errors
 
 log = logging.getLogger("uvicorn.error")
 
@@ -154,4 +154,6 @@ class HyperliquidDataClient:
         try:
             return next(i for i, asset in enumerate(universe) if asset["name"] == symbol)
         except StopIteration as exc:
-            raise ValueError(f"Symbol '{symbol}' not found in Hyperliquid universe") from exc
+            raise HyperliquidValidationError(
+                f"Symbol '{symbol}' not found in Hyperliquid universe"
+            ) from exc

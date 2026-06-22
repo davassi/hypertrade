@@ -19,6 +19,7 @@ from hypertrade.routes.hyperliquid_data_client import HyperliquidDataClient
 from hypertrade.routes.hyperliquid_errors import (
     HyperliquidAPIError,
     HyperliquidNetworkError,
+    HyperliquidValidationError,
 )
 
 
@@ -137,3 +138,46 @@ def test_meta_memo_is_per_instance_not_global(monkeypatch):
     second = _client(monkeypatch)
     second.get_meta("BTC")
     assert fake_post.meta_calls == 2
+
+
+# ===================================================================
+# Unknown symbol -> HyperliquidValidationError (TD-2 (A))
+# ===================================================================
+
+_UNIVERSE = [
+    {"name": "BTC", "szDecimals": 3, "maxLeverage": 50},
+    {"name": "ETH", "szDecimals": 4, "maxLeverage": 50},
+]
+
+
+def test_symbol_to_idx_returns_index_for_present_symbol():
+    """A symbol present in the universe resolves to its position."""
+    assert HyperliquidDataClient._symbol_to_idx("BTC", _UNIVERSE) == 0
+    assert HyperliquidDataClient._symbol_to_idx("ETH", _UNIVERSE) == 1
+
+
+def test_symbol_to_idx_unknown_symbol_raises_validation_error():
+    """An unknown ticker (typo/delisted) is bad client input → validation error,
+    NOT a raw ValueError that would escape the taxonomy as an unhandled 500."""
+    with pytest.raises(HyperliquidValidationError):
+        HyperliquidDataClient._symbol_to_idx("NOPE", _UNIVERSE)
+
+
+def test_symbol_to_idx_unknown_symbol_is_not_a_value_error():
+    """The unknown-symbol error must NOT be a ValueError subclass — the webhook
+    taxonomy handlers only catch HyperliquidError variants."""
+    with pytest.raises(HyperliquidValidationError) as excinfo:
+        HyperliquidDataClient._symbol_to_idx("NOPE", _UNIVERSE)
+    assert not isinstance(excinfo.value, ValueError)
+
+
+def test_get_meta_unknown_symbol_raises_validation_error(monkeypatch):
+    """get_meta() for a ticker not on Hyperliquid raises HyperliquidValidationError
+    (the path place_order() takes before trading)."""
+    fake_post = _CountingPost()
+    monkeypatch.setattr(
+        "hypertrade.routes.hyperliquid_data_client.requests.post", fake_post
+    )
+    client = _client(monkeypatch)
+    with pytest.raises(HyperliquidValidationError):
+        client.get_meta("NOPE")
