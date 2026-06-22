@@ -27,18 +27,6 @@ code before acting.
   `HyperliquidValidationError` / `HyperliquidAPIError`. (Follow-up to `a8facf4`,
   which covered only transport errors.)
 
-- **[TD-17] `close_position` escalation retry reuses the same cloid** (`P1`) —
-  introduced alongside TD-1 (`2c27b08`). When the first reduce-only IOC "could
-  not immediately match", `hyperliquid_execution_client.py::close_position`
-  sleeps 2s and recursively resubmits at 3× premium with the **same cloid**. If
-  Hyperliquid rejects a duplicate cloid (even for a cancelled IOC), the
-  escalation is rejected and the close silently fails to escalate while still
-  returning 200. Conditional on HL's dup-cloid semantics for cancelled orders
-  (unverified). *Fix:* rework the nested retry to coexist with cloid idempotency
-  — e.g. a distinct sub-cloid per escalation attempt while the outer
-  query-before-resubmit stays keyed on the base cloid, or drop the nested
-  escalation in favor of the outer loop. Money-path on closes — design carefully.
-
 ### Concurrency / scale
 
 - **[TD-3] Rate limiter is per-process** (`P1`) —
@@ -121,6 +109,10 @@ code before acting.
 
 ## Resolved
 
+- 2026-06-22 `5995bac` — **TD-17**: dropped `close_position`'s nested
+  premium-escalation retry (it conflicted with cloid idempotency, and
+  slippage-escalation policy belongs to the strategy bot). Single reduce-only
+  IOC now.
 - 2026-06-22 `2c27b08` — **TD-1**: deterministic cloid (from nonce) +
   query-before-resubmit prevents double-submitting an order on retry.
 - 2026-06-22 `8405351` — **TD-6**: per-order meta fetch memoized (5 → 1
