@@ -1,7 +1,7 @@
 """Tests for TradingView webhook endpoint behavior and integrations.
 
 These tests validate content-type enforcement, schema validation, optional
-secret checks, IP whitelist behavior, and Telegram notification wiring.
+secret checks, and IP whitelist behavior.
 """
 
 from __future__ import annotations
@@ -829,13 +829,6 @@ def test_history_requires_bearer_auth(monkeypatch):
     assert client.get("/history/orders", headers={"Authorization": "Bearer wrong"}).status_code == 401
     assert client.get("/history/stats", headers={"Authorization": "Bearer secret"}).status_code == 200
     assert client.get("/history/orders", headers={"Authorization": "Bearer secret"}).status_code == 200
-
-
-def test_admin_auth_still_enforced_via_shared_dependency(monkeypatch):
-    app = make_app(monkeypatch, secret="secret")
-    client = TestClient(app)
-    # No token → rejected by the shared dependency (regression after the DRY refactor)
-    assert client.post("/admin/telegram", json={"enabled": False}).status_code == 401
 
 
 # ===================================================================

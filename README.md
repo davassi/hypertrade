@@ -53,7 +53,7 @@ Using pip:
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
-pip install fastapi uvicorn[standard] pydantic pydantic-settings python-dotenv jsonschema pyTelegramBotAPI
+pip install fastapi uvicorn[standard] pydantic pydantic-settings python-dotenv jsonschema
 ```
 
 ## Run
@@ -102,8 +102,8 @@ Set `HYPERTRADE_DRY_RUN=true` to validate incoming webhooks **without trading**.
 The request runs the full pipeline — content-type, JSON-schema, secret/auth,
 signal parsing, leverage and `reduce_only` mapping — and returns a `dry_run`
 response describing the order that *would* have been placed, while performing
-**no side effect**: no Hyperliquid order, no database write, no idempotency
-reservation, and no Telegram notification. On startup the daemon logs a clear
+**no side effect**: no Hyperliquid order, no database write, and no idempotency
+reservation. On startup the daemon logs a clear
 `⚠️ DRY-RUN MODE ENABLED` warning so a demo instance is never mistaken for a
 live one.
 
@@ -320,22 +320,6 @@ Behavior:
 - Webhook requires `Content-Type: application/json` and returns 415 otherwise.
 - `HYPERTRADE_IDEMPOTENCY_ENABLED` (default `true`): require a unique `general.nonce` per order and place each at most once. Requires the order DB (the daemon refuses to start if `HYPERTRADE_DB_ENABLED=false`).
 - `HYPERTRADE_IDEMPOTENCY_INFLIGHT_TIMEOUT` (default `60`): seconds before an in-progress reservation is considered stale and reclaimable.
-
-### Telegram Notifications (optional)
-
-Enable Telegram alerts for processed webhooks. Set the following env vars:
-
-```bash
-# Enable/disable without removing other variables (default: true)
-export HYPERTRADE_TELEGRAM_ENABLED=true
-
-# Telegram bot token and chat id
-export HYPERTRADE_TELEGRAM_BOT_TOKEN=123456:ABCDEF-your-bot-token
-export HYPERTRADE_TELEGRAM_CHAT_ID=987654321
-```
-
-When enabled, each accepted webhook enqueues a background task that sends a message with the parsed signal, ticker, action, contracts and price. 
-If either token or chat id is missing or `HYPERTRADE_TELEGRAM_ENABLED=false`, no message is sent.
 
 ## Sequence diagram
 

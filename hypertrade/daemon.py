@@ -18,8 +18,6 @@ from .middleware.content_limit import ContentLengthLimitMiddleware
 from .middleware.rate_limit import RateLimitMiddleware
 from .routes.health import router as health_router
 from .routes.webhooks import router as webhooks_router, history_router
-from .routes.admin import router as admin_router
-from .notify import send_telegram_message
 from .exception_handlers import register_exception_handlers
 from .database import OrderDatabase
 from .version import __version__
@@ -119,23 +117,6 @@ def create_daemon() -> FastAPI:
 
     app.state.settings = settings
 
-    # Pre-bind optional Telegram notifier to avoid per-request env access
-    if (
-        getattr(settings, "telegram_enabled", True)
-        and getattr(settings, "telegram_bot_token", None)
-        and getattr(settings, "telegram_chat_id", None)
-    ):
-        token = settings.telegram_bot_token
-        chat_id = settings.telegram_chat_id
-
-        def _telegram_notify(text: str, _token=token, _chat_id=chat_id):
-            return send_telegram_message(_token, _chat_id, text)
-
-        app.state.telegram_notify = _telegram_notify
-        log.info("Telegram notifications enabled")
-    else:
-        app.state.telegram_notify = None
-
     # Initialize database if enabled
     if getattr(settings, "db_enabled", True):
         try:
@@ -218,7 +199,6 @@ def create_daemon() -> FastAPI:
     app.include_router(health_router)
     app.include_router(webhooks_router)
     app.include_router(history_router)
-    app.include_router(admin_router)
 
     # Log endpoints after routes are registered
     log_endpoints(app)
@@ -226,7 +206,7 @@ def create_daemon() -> FastAPI:
     if settings.dry_run:
         log.warning(
             "⚠️  DRY-RUN MODE ENABLED — webhooks are validated but NO orders are "
-            "sent to Hyperliquid, NO DB writes, NO Telegram notifications."
+            "sent to Hyperliquid, NO DB writes."
         )
 
     return app

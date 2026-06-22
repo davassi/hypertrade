@@ -89,11 +89,6 @@ class Settings(BaseSettings):
     enable_trusted_hosts: bool = False
     trusted_hosts: List[str] = ["*"]
 
-    # Optional Telegram notifications
-    telegram_enabled: bool = True
-    telegram_bot_token: Optional[str] = None
-    telegram_chat_id: Optional[str] = None
-
     # Database persistence
     db_path: str = "./hypertrade_local.db"
     db_enabled: bool = True
@@ -110,7 +105,7 @@ class Settings(BaseSettings):
     idempotency_retention_seconds: int = 604800  # 7 days
 
     # Dry-run / demo: accept and fully validate webhooks but never place orders,
-    # write to the DB, touch the idempotency store, or send Telegram messages.
+    # write to the DB, or touch the idempotency store.
     dry_run: bool = False
 
     # ── Validators ────────────────────────────────────────────────────────────

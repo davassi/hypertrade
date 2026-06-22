@@ -11,7 +11,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from jsonschema import (
     validate as jsonschema_validate,
@@ -139,8 +139,7 @@ def _extract_oid(found_order: dict) -> Optional[int]:
     summary="TradingView → Hyperliquid",
 )
 async def hypertrade_webhook(
-    request: Request, 
-    background_tasks: BackgroundTasks
+    request: Request,
 ) -> dict:
     """Main webhook endpoint: validates, parses, logs, and returns a summary."""
     start_time = time.perf_counter()
@@ -267,7 +266,7 @@ async def hypertrade_webhook(
     )
 
     # Dry-run / demo: the full pipeline above is exercised, but nothing leaves
-    # the process — no exchange call, no DB write, no idempotency, no Telegram.
+    # the process — no exchange call, no DB write, no idempotency.
     # Keep any new external/side-effecting call BELOW this branch — above it runs in dry-run too.
     if settings.dry_run:
         log.info(
@@ -428,19 +427,6 @@ async def hypertrade_webhook(
             idempotency.complete(nonce, response)
         except sqlite3.Error as exc:
             log.warning("Idempotency store unavailable during complete (nonce=%s): %s", nonce, exc)
-
-    # Optional: shoot the response to Telegram (if configured).
-    notifier = getattr(request.app.state, "telegram_notify", None)
-    if notifier:
-        req_id = getattr(request.state, "request_id", None)
-        text = _format_telegram_message(
-            payload=payload,
-            symbol=symbol,
-            signal=signal,
-            side=side,
-            req_id=req_id,
-        )
-        background_tasks.add_task(notifier, text)
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
     log.info("Webhook processed in %.1f ms", elapsed_ms)
@@ -638,49 +624,6 @@ def _build_dry_run_response(
         "subaccount": order_request.subaccount,
         "received_at": datetime.now(timezone.utc).isoformat(),
     }
-
-def _format_telegram_message(
-    *,
-    payload: TradingViewWebhook,
-    symbol: str,
-    signal: SignalType,
-    side: Side,
-    req_id: Optional[str],
-) -> str:
-    """Format a concise Telegram message for the webhook event.
-
-    Keep locals to a minimum to satisfy lint rules and reduce noise.
-    """
-    price_text = str(payload.order.price) if payload.order.price is not None else "market"
-    lines = [
-        "HyperTrade Webhook",
-        f"Symbol: {symbol}",
-        (
-            f"Signal: {signal.value} | Side: {side.value} | Leverage: "
-            f"{payload.general.leverage or '-'}"
-        ),
-        (
-            "Order: action="
-            f"{payload.order.action} id={payload.order.id} "
-            f"contracts={payload.order.contracts} price={price_text}"
-        ),
-        (
-            "Position: "
-            f"{payload.market.previous_position}({payload.market.previous_position_size}) -> "
-            f"{payload.market.position}({payload.market.position_size})"
-        ),
-        f"Strategy: {payload.general.strategy or '-'} | Interval: {payload.general.interval}",
-        (
-            "Times: "
-            f"time={payload.general.time.isoformat()} now={payload.general.timenow.isoformat()}"
-        ),
-    ]
-    if payload.order.comment:
-        lines.append(f"Comment: {payload.order.comment}")
-    if req_id:
-        lines.append(f"ReqID: {req_id}")
-    return "\n".join(lines)
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # History & Analytics Endpoints
