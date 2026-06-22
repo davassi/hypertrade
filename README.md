@@ -64,6 +64,13 @@ Run via Uvicorn directly:
 uvicorn hypertrade.daemon:app --host 0.0.0.0 --port 6487
 ```
 
+Or via the module entrypoint, which serves the same app on the host/port from
+`HYPERTRADE_LISTEN_HOST` / `HYPERTRADE_LISTEN_PORT` (default `0.0.0.0:6487`):
+
+```bash
+python -m hypertrade
+```
+
 Or use the bundled launchers, which load secrets from [`pass`](https://www.passwordstore.org/),
 select the Hyperliquid endpoint, and run the guided setup on first use:
 
