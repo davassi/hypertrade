@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 import logging
 from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
 from enum import Enum
@@ -159,14 +158,17 @@ class HyperliquidExecutionClient:
         size: float,
         premium_bps: Optional[float] = None,
         cloid: Optional[str] = None,
-        max_retries: int = 1,
     ) -> Dict[str, Any]:
-        """
-        Close an existing position instantly using reduce-only market-like order.
-        Retries once with 3x premium if first attempt fails to cross.
+        """Close a position with a single reduce-only IOC market-like order.
+
+        Does NOT escalate the premium on a non-crossing IOC: aggressive-close /
+        slippage-tolerance policy belongs to the strategy bot, not this thin
+        executor (TD-17). A non-fill response is returned to the caller as-is.
+        (The previous nested 3x-premium retry also reused the same cloid, which
+        conflicted with cloid idempotency — TD-1.)
         """
         premium = premium_bps or self.default_premium_bps
-        res = self.market_order(
+        return self.market_order(
             symbol=symbol,
             side=side.opposite(),  # to close LONG → sell, to close SHORT → buy
             size=size,
@@ -174,21 +176,6 @@ class HyperliquidExecutionClient:
             reduce_only=True,
             cloid=cloid,
         )
-
-        # Auto-retry on IOC failure
-        if max_retries > 0:
-            if self._was_ioc_rejected(res):
-                log.info("IOC close failed for %s, retrying with 3x premium...", symbol)
-                time.sleep(2)
-                return self.close_position(
-                    symbol=symbol,
-                    side=side,
-                    size=size,
-                    premium_bps=max(premium * 3, 50.0),
-                    cloid=cloid,
-                    max_retries=max_retries - 1,
-                )
-        return res
 
     def cancel_or_reverse(
         self,
@@ -298,14 +285,6 @@ class HyperliquidExecutionClient:
         
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"Failed to parse order response: {res}") from exc
-
-    @staticmethod
-    def _was_ioc_rejected(res: Dict[str, Any]) -> bool:
-        try:
-            status = res["response"]["data"]["statuses"][0]
-            return "error" in status and "could not immediately match" in status["error"]
-        except (KeyError, TypeError):
-            return False
 
     def _aggressive_price_from_impact(self, symbol: str, is_buy: bool, premium_bps: float) -> float:
         buy_impact, sell_impact = self.data.get_impact_prices(symbol)

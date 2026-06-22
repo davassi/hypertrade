@@ -175,3 +175,29 @@ def test_find_order_by_cloid_http_error_is_translated(monkeypatch):
 
     with pytest.raises(HyperliquidAPIError):
         client.find_order_by_cloid(_VALID_CLOID, user="0xMASTER")
+
+
+def test_close_position_does_not_escalate_on_no_fill(monkeypatch):
+    """TD-17: close_position submits ONE reduce-only IOC and does not retry with
+    an escalated premium on a non-crossing IOC. Slippage-tolerance / aggressive-
+    close policy belongs to the strategy bot, not this thin executor; the nested
+    same-cloid retry also conflicted with cloid idempotency (TD-1). The non-fill
+    response is returned to the caller as-is."""
+    client = _client(monkeypatch)
+    no_fill = {
+        "response": {
+            "data": {
+                "statuses": [
+                    {"error": "Order could not immediately match against any resting orders."}
+                ]
+            }
+        }
+    }
+    client.exchange.order.return_value = no_fill
+
+    result = client.close_position(
+        symbol="SOL", side=PositionSide.LONG, size=1.0, cloid=_VALID_CLOID
+    )
+
+    assert client.exchange.order.call_count == 1  # exactly one submission, no escalation
+    assert result == no_fill
