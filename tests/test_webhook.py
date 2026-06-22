@@ -121,6 +121,8 @@ def make_app(monkeypatch, *, secret: str | None = None):
     if secret == "":
         # Empty string means: use IP whitelist instead of secret
         monkeypatch.setenv("HYPERTRADE_IP_WHITELIST_ENABLED", "true")
+        # No secret in this mode — clear any ambient one so enforcement stays off.
+        monkeypatch.delenv("HYPERTRADE_WEBHOOK_SECRET", raising=False)
     elif secret is not None:
         # Explicit secret provided
         monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", secret)
@@ -133,6 +135,10 @@ def make_app(monkeypatch, *, secret: str | None = None):
         if not ip_whitelist_already_set:
             monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", "secret")
             monkeypatch.setenv("HYPERTRADE_IP_WHITELIST_ENABLED", "false")
+        else:
+            # IP-whitelist-only test: no secret — clear any ambient one so the
+            # whitelisted request isn't rejected by leaked secret enforcement.
+            monkeypatch.delenv("HYPERTRADE_WEBHOOK_SECRET", raising=False)
 
     # Ensure this repo's package is first on sys.path to avoid name collisions
     repo_root = str(pathlib.Path(__file__).resolve().parents[1])

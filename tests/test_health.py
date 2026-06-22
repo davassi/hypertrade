@@ -17,6 +17,9 @@ def make_app(monkeypatch):
     monkeypatch.setenv("HYPERTRADE_API_WALLET_PRIV", "dummy-priv-key")
     monkeypatch.setenv("HYPERTRADE_SUBACCOUNT_ADDR", "0xSUB")
     monkeypatch.setenv("PRIVATE_KEY", "0x" + "1" * 64)
+    # Auth is required to build the app; set a secret so the fixture is hermetic
+    # regardless of ambient env (the health endpoints don't enforce it).
+    monkeypatch.setenv("HYPERTRADE_WEBHOOK_SECRET", "secret")
 
     # Ensure this repo's package is first on sys.path to avoid name collisions
     repo_root = str(pathlib.Path(__file__).resolve().parents[1])
