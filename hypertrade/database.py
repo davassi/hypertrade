@@ -8,6 +8,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
 
+from hypertrade import sqlite_util
+
 log = logging.getLogger("uvicorn.error")
 
 
@@ -27,9 +29,7 @@ class OrderDatabase:
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection with row factory."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return sqlite_util.connect(self.db_path)
 
     def _ensure_db_exists(self) -> None:
         """Create database tables if they don't exist."""

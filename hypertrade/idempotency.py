@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from hypertrade import sqlite_util
+
 
 class ReserveOutcome(Enum):
     NEW = "new"                        # reserved; caller must place the order
@@ -46,9 +48,7 @@ class IdempotencyStore:
         self._ensure_schema()
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return sqlite_util.connect(self.db_path)
 
     def _ensure_schema(self) -> None:
         conn = self._get_connection()
