@@ -37,11 +37,6 @@ code before acting.
 
 ### Error handling
 
-- **[TD-5] Telegram send swallows only `ApiTelegramException`** (`P1`) —
-  `notify.py` lets `requests` network errors escape the fire-and-forget
-  background task, violating its `bool` contract and spewing tracebacks on a
-  flaky endpoint. *Fix:* broaden the catch and return `False`.
-
 - **[TD-16] Schema-validation 422 hides the offending field** (`P2`) —
   `routes/webhooks.py::_validate_schema` catches `JSONSchemaValidationError` and
   re-raises `HTTPException(422, detail="JSON schema validation error")`,
@@ -58,11 +53,6 @@ code before acting.
   on a length/format mismatch).
 
 ### Security / hygiene
-
-- **[TD-7] `telegram_bot_token` is a plain `str`, not `SecretStr`** (`P2`) —
-  `config.py`. A bot token is a credential; the other secrets use `SecretStr`
-  and the admin endpoint already masks it. *Fix:* `Optional[SecretStr]`, call
-  `.get_secret_value()` at the single send site.
 
 - **[TD-8] `trusted_hosts` defaults to `["*"]`** (`P2`) —
   with `enable_trusted_hosts=true` the TrustedHostMiddleware allows every
@@ -109,6 +99,10 @@ code before acting.
 
 ## Resolved
 
+- 2026-06-22 `d01076b` — **Telegram feature removed** (unused): deleted the
+  notification path + the `/admin/telegram` runtime-reconfig endpoint and dropped
+  the `pyTelegramBotAPI` dependency. Moots **TD-5** (narrow Telegram exception
+  handling) and **TD-7** (`telegram_bot_token` as `SecretStr`).
 - 2026-06-22 `5995bac` — **TD-17**: dropped `close_position`'s nested
   premium-escalation retry (it conflicted with cloid idempotency, and
   slippage-escalation policy belongs to the strategy bot). Single reduce-only
