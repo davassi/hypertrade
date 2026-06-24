@@ -157,3 +157,51 @@ def test_find_order_by_cloid_returns_none_when_absent(monkeypatch):
     client.find_order_by_cloid.return_value = None
     result = svc.find_order_by_cloid("0x" + "d" * 32)
     assert result is None
+
+
+# ===================================================================
+# A statuses[0] {"error": ...} must surface, not look like a success
+# (e.g. "Order has invalid price.", insufficient margin). Previously this
+# fell into the else-branch, was logged as "Order submitted" and returned
+# 200/ok — a phantom fill that desyncs the strategy bot.
+# ===================================================================
+
+def test_exchange_error_status_raises_api_error(monkeypatch):
+    """An exchange-level error in statuses[0] must raise HyperliquidAPIError (-> 502),
+    never be reported as a placed order."""
+    svc, client = _service(monkeypatch)
+    client.market_order.return_value = {
+        "response": {"data": {"statuses": [{"error": "Order has invalid price."}]}}
+    }
+    with pytest.raises(HyperliquidAPIError):
+        svc.place_order(OrderRequest(
+            symbol="SOL", side=Side.BUY, signal=SignalType.OPEN_LONG,
+            qty=Decimal("1"), price=Decimal("100"), leverage=1,
+        ))
+
+
+def test_exchange_error_status_on_close_raises_api_error(monkeypatch):
+    """The close path shares the same status interpretation, so an error there
+    must surface too."""
+    svc, client = _service(monkeypatch)
+    client.close_position.return_value = {
+        "response": {"data": {"statuses": [{"error": "insufficient margin"}]}}
+    }
+    with pytest.raises(HyperliquidAPIError):
+        svc.place_order(OrderRequest(
+            symbol="SOL", side=Side.SELL, signal=SignalType.CLOSE_LONG,
+            qty=Decimal("1"), price=Decimal("100"), leverage=1,
+        ))
+
+
+def test_resting_status_returns_without_error(monkeypatch):
+    """A resting (accepted, not-yet-filled) status is a valid non-error outcome and
+    must be returned, not mistaken for an error."""
+    svc, client = _service(monkeypatch)
+    resting = {"response": {"data": {"statuses": [{"resting": {"oid": 1}}]}}}
+    client.market_order.return_value = resting
+    res = svc.place_order(OrderRequest(
+        symbol="SOL", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("1"), price=Decimal("100"), leverage=1,
+    ))
+    assert res is resting
