@@ -126,6 +126,7 @@ class HyperliquidExecutionClient:
     ) -> Dict[str, Any]:
         """Place a market-like order using IOC with price impact premium."""
         
+        size = float(size)  # defensive: the SDK wire-encoder rejects Decimal sizes
         premium = premium_bps or self.default_premium_bps
         is_buy = side == PositionSide.LONG
         aggressive_px = self._aggressive_price_from_impact(symbol, is_buy=is_buy, premium_bps=premium)
@@ -305,8 +306,12 @@ class HyperliquidExecutionClient:
         if price <= 0:
             raise ValueError(f"Invalid price: {price}")
 
-        tick = self._get_tick_size(symbol)
-        price_decimal = Decimal(str(price))
-        rounding = ROUND_CEILING if is_buy else ROUND_FLOOR
-        normalized = price_decimal.quantize(tick, rounding=rounding)
-        return float(normalized)
+        # Hyperliquid perp prices: at most 5 significant figures AND at most
+        # (6 - szDecimals) decimal places, else the exchange rejects with
+        # "Order has invalid price." NB szDecimals is a SIZE precision, NOT a price
+        # tick — the old tick = 10^-szDecimals produced over-precise prices that got
+        # rejected. The aggressive premium is applied upstream, so nearest-rounding
+        # onto the valid grid still crosses the spread for an IOC.
+        sz_decimals = int(self.data.get_meta(symbol).get("szDecimals", 3))
+        max_decimals = max(6 - sz_decimals, 0)
+        return round(float(f"{price:.5g}"), max_decimals)

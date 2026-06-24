@@ -154,7 +154,7 @@ class HyperliquidService:
         # NOTE: this executor applies no balance cap — constraining size to
         # available margin is the strategy bot's responsibility, not this thin
         # executor's.
-        size = round(request.qty, sz_decimals)
+        size = float(round(request.qty, sz_decimals))  # SDK wire-encoder wants float, not Decimal
         log.debug("Position size calculated: contracts=%s leverage=%sx size=%s sz_decimals=%s", request.qty, leverage, size, sz_decimals)
 
         if size <= 0:
@@ -205,8 +205,17 @@ class HyperliquidService:
             if "filled" in status:
                 st = status["filled"]
                 log.info("Order filled successfully: symbol=%s size=%s avg_price=%s total_sz=%s", symbol, size, st["avgPx"], st["totalSz"])
+            elif "resting" in status:
+                log.info("Order resting (not yet filled): symbol=%s status=%s", symbol, status)
+            elif "error" in status:
+                # The exchange accepted the request shape but rejected the order
+                # (invalid price, insufficient margin, ...). Surface it instead of
+                # reporting a phantom success, or the strategy bot desyncs from reality.
+                log.error("Order rejected by exchange: symbol=%s error=%s", symbol, status["error"])
+                raise HyperliquidAPIError(f"Exchange rejected order: {status['error']}")
             else:
-                log.info("Order submitted: symbol=%s status=%s", symbol, status)
+                log.error("Unexpected order status: symbol=%s status=%s", symbol, status)
+                raise HyperliquidAPIError(f"Unexpected order status: {status}")
 
         return res
 
