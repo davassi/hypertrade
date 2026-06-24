@@ -41,9 +41,11 @@ class HyperliquidDataClient:
 
         # Per-instance (request-scoped) memo of (universe, asset_ctxs). Populated
         # only on a successful metaAndAssetCtxs fetch; never invalidated.
-        self._meta_cache: Optional[
-            Tuple[list[Dict[str, Any]], list[Dict[str, Any]]]
-        ] = None
+        # Per-instance memo of (universe, asset_ctxs) keyed by dex ("" = main perp,
+        # "xyz" = the xyz HIP-3 dex, ...). Each dex is fetched once on first use.
+        self._meta_cache: Dict[
+            str, Tuple[list[Dict[str, Any]], list[Dict[str, Any]]]
+        ] = {}
 
         log.debug("HyperliquidDataClient initialized | Base URL: %s", self.info_url)
 
@@ -85,8 +87,8 @@ class HyperliquidDataClient:
         return float(buy_px), float(sell_px)
 
     def get_meta(self, symbol: str) -> Dict[str, Any]:
-        """Return the metadata entry for a symbol."""
-        universe, _ = self._fetch_meta_and_asset_ctxs()
+        """Return the metadata entry for a symbol (dex-aware)."""
+        universe, _ = self._fetch_meta_and_asset_ctxs(self._dex_of(symbol))
         idx = self._symbol_to_idx(symbol, universe)
         return universe[idx]
 
@@ -129,22 +131,28 @@ class HyperliquidDataClient:
             resp.raise_for_status()
             return resp.json()
 
-    def _fetch_meta_and_asset_ctxs(self) -> Tuple[list[Dict[str, Any]], list[Dict[str, Any]]]:
-        """Return the meta universe and asset contexts, memoized per instance.
+    @staticmethod
+    def _dex_of(symbol: str) -> str:
+        """The builder-dex prefix of a coin ("xyz" for "xyz:EWJ"), "" for the main perp."""
+        return symbol.split(":", 1)[0] if ":" in symbol else ""
 
-        The first call performs one `metaAndAssetCtxs` POST and caches the result
-        on this instance; subsequent calls reuse it at no network cost. The cache
-        is only written on a successful fetch — if `_post` raises (transport or
-        HTTP error), nothing is stored and the next call retries.
+    def _fetch_meta_and_asset_ctxs(self, dex: str = "") -> Tuple[list[Dict[str, Any]], list[Dict[str, Any]]]:
+        """Return (universe, asset_ctxs) for the given dex ("" = main), memoized per dex.
+
+        The first call for a dex performs one `metaAndAssetCtxs` POST (with the `dex`
+        field for a builder/HIP-3 dex) and caches the result on this instance;
+        subsequent calls reuse it at no network cost. The cache is only written on a
+        successful fetch — if `_post` raises, nothing is stored and the next call retries.
         """
-        if self._meta_cache is None:
-            data = self._post({"type": "metaAndAssetCtxs"})
-            self._meta_cache = (data[0]["universe"], data[1])
-        return self._meta_cache
+        if dex not in self._meta_cache:
+            payload = {"type": "metaAndAssetCtxs"} if not dex else {"type": "metaAndAssetCtxs", "dex": dex}
+            data = self._post(payload)
+            self._meta_cache[dex] = (data[0]["universe"], data[1])
+        return self._meta_cache[dex]
 
     def _get_ctx(self, symbol: str) -> Dict[str, Any]:
-        """Fetch the asset context for a symbol."""
-        universe, asset_ctxs = self._fetch_meta_and_asset_ctxs()
+        """Fetch the asset context for a symbol (dex-aware)."""
+        universe, asset_ctxs = self._fetch_meta_and_asset_ctxs(self._dex_of(symbol))
         idx = self._symbol_to_idx(symbol, universe)
         return asset_ctxs[idx]
 

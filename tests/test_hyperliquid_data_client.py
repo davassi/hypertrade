@@ -181,3 +181,54 @@ def test_get_meta_unknown_symbol_raises_validation_error(monkeypatch):
     client = _client(monkeypatch)
     with pytest.raises(HyperliquidValidationError):
         client.get_meta("NOPE")
+
+
+# ===================================================================
+# HIP-3 builder-dex awareness: dex-qualified coins ("xyz:EWJ") route to the
+# dex's metaAndAssetCtxs (with the `dex` field), cached per dex.
+# ===================================================================
+
+def test_dex_of_helper():
+    assert HyperliquidDataClient._dex_of("xyz:EWJ") == "xyz"
+    assert HyperliquidDataClient._dex_of("xyz:XYZ100") == "xyz"
+    assert HyperliquidDataClient._dex_of("BTC") == ""
+
+
+def test_get_meta_is_dex_aware(monkeypatch):
+    """A dex-qualified coin fetches the dex's metaAndAssetCtxs (with the `dex`
+    field) and a plain coin the main perp meta; each dex is cached once."""
+    seen = []
+
+    def _post(_url, json=None, timeout=None):  # noqa: A002 - mirror requests API
+        seen.append(json)
+        dex = (json or {}).get("dex")
+        uni = (
+            [{"name": "xyz:XYZ100", "szDecimals": 4, "maxLeverage": 30},
+             {"name": "xyz:EWJ", "szDecimals": 3, "maxLeverage": 20}]
+            if dex == "xyz" else
+            [{"name": "BTC", "szDecimals": 3, "maxLeverage": 50}]
+        )
+
+        class _Resp:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> list:
+                return [{"universe": uni}, [{} for _ in uni]]
+
+        return _Resp()
+
+    monkeypatch.setattr("hypertrade.routes.hyperliquid_data_client.requests.post", _post)
+    client = _client(monkeypatch)
+
+    assert client.get_meta("xyz:EWJ")["szDecimals"] == 3      # from the xyz dex universe
+    assert client.get_meta("BTC")["maxLeverage"] == 50        # from the main universe
+    metas = [p for p in seen if p.get("type") == "metaAndAssetCtxs"]
+    assert {"type": "metaAndAssetCtxs", "dex": "xyz"} in metas
+    assert {"type": "metaAndAssetCtxs"} in metas
+
+    # cache is per-dex: a second xyz lookup adds no fetch
+    before = len(metas)
+    client.get_meta("xyz:XYZ100")
+    after = len([p for p in seen if p.get("type") == "metaAndAssetCtxs"])
+    assert after == before

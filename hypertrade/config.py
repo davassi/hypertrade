@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     enable_trusted_hosts: bool = False
     trusted_hosts: List[str] = ["*"]
 
+    # Builder-deployed (HIP-3) perp dexes to load ALONGSIDE the main perp universe,
+    # so dex-qualified coins (e.g. "xyz:EWJ") resolve for ordering. JSON array env,
+    # e.g. HYPERTRADE_PERP_DEXS='["xyz"]'. The main perp dex is always loaded.
+    perp_dexs: List[str] = ["xyz"]
+
     # Database persistence
     db_path: str = "./hypertrade_local.db"
     db_enabled: bool = True

@@ -106,7 +106,11 @@ class HyperliquidService:
         if not request.symbol:
             raise HyperliquidValidationError("Symbol required")
 
-        symbol = request.symbol.upper()
+        # Preserve the case of dex-qualified (HIP-3) coins like "xyz:NVDA": the dex
+        # prefix is case-sensitive on Hyperliquid. Uppercasing it to "XYZ:NVDA" breaks
+        # the dex meta lookup (metaAndAssetCtxs dex="XYZ" 500s) and name_to_asset.
+        # Plain coins (BTC, eth) are still uppercased.
+        symbol = request.symbol if ":" in request.symbol else request.symbol.upper()
 
         # ===================================================================
         # Fresh data right before trading

@@ -50,13 +50,17 @@ class HyperliquidExecutionClient:
         vault_address: Optional[str] = None,
         base_url: Optional[str] = None,
         default_premium_bps: float = 5.0,
+        perp_dexs: Optional[list] = None,
     ):
         if not private_key:
             raise ValueError("private_key must be provided")
 
-        if base_url is None:
+        if base_url is None or perp_dexs is None:
             settings = get_settings()
-            base_url = settings.api_url
+            if base_url is None:
+                base_url = settings.api_url
+            if perp_dexs is None:
+                perp_dexs = settings.perp_dexs
 
         pk = private_key if private_key.startswith("0x") else f"0x{private_key}"
         wallet = Account.from_key(pk)
@@ -69,6 +73,9 @@ class HyperliquidExecutionClient:
             base_url=base_url,
             vault_address=vault_address,
             account_address=account_address,
+            # Load the main perp universe ("") plus any builder (HIP-3) dexes so
+            # dex-qualified coins like "xyz:EWJ" resolve via name_to_asset.
+            perp_dexs=[""] + list(perp_dexs),
         )
         self.data = HyperliquidDataClient(account_address=account_address, base_url=base_url)
         self.default_premium_bps = float(default_premium_bps)

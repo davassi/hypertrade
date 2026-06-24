@@ -205,3 +205,33 @@ def test_resting_status_returns_without_error(monkeypatch):
         qty=Decimal("1"), price=Decimal("100"), leverage=1,
     ))
     assert res is resting
+
+
+# ===================================================================
+# Symbol case: dex-qualified (HIP-3) coins keep their lowercase prefix.
+# Uppercasing "xyz:NVDA" -> "XYZ:NVDA" breaks the dex meta lookup
+# (metaAndAssetCtxs dex="XYZ" 500s) and name_to_asset.
+# ===================================================================
+
+def test_dex_qualified_symbol_case_is_preserved(monkeypatch):
+    """A dex-qualified coin keeps its lowercase dex prefix through place_order, into
+    both the meta lookup and the order submitted to the exchange."""
+    svc, client = _service(monkeypatch)
+    svc.place_order(OrderRequest(
+        symbol="xyz:NVDA", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("1"), price=Decimal("100"), leverage=1,
+    ))
+    client.data.get_meta.assert_called_with("xyz:NVDA")
+    _, kwargs = client.market_order.call_args
+    assert kwargs["symbol"] == "xyz:NVDA"
+
+
+def test_plain_symbol_is_uppercased(monkeypatch):
+    """A plain (non-dex) coin is still normalized to uppercase (eth -> ETH)."""
+    svc, client = _service(monkeypatch)
+    svc.place_order(OrderRequest(
+        symbol="eth", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("1"), price=Decimal("100"), leverage=1,
+    ))
+    _, kwargs = client.market_order.call_args
+    assert kwargs["symbol"] == "ETH"
