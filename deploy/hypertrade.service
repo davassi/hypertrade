@@ -1,0 +1,37 @@
+# HyperTrade systemd unit — Hyperliquid execution daemon for the Cointegration Desk.
+#
+# Install (on a host where ~/hypertrade holds the repo + a built .venv):
+#   1. Create the EnvironmentFile (mode 0600), e.g. ~/.config/hypertrade/prod.env:
+#        HYPERTRADE_ENVIRONMENT=prod
+#        HYPERTRADE_MASTER_ADDR=0x...
+#        HYPERTRADE_API_WALLET_PRIV=...        # agent wallet (no withdrawal perms)
+#        HYPERTRADE_SUBACCOUNT_ADDR=           # empty -> trade the master account
+#        HYPERTRADE_WEBHOOK_SECRET=...
+#        HYPERTRADE_DB_PATH=./hypertrade_prod.db
+#   2. Adjust the User=/WorkingDirectory=/EnvironmentFile=/ExecStart= paths below.
+#   3. sudo cp deploy/hypertrade.service /etc/systemd/system/ \
+#        && sudo systemctl daemon-reload && sudo systemctl enable --now hypertrade
+#
+# Binds 127.0.0.1: the Cointegration Desk core posts to it on the SAME host, so the
+# order endpoint is never exposed. For an external-webhook (TradingView) setup,
+# bind 0.0.0.0 instead and firewall the port.
+[Unit]
+Description=HyperTrade - Hyperliquid execution daemon (Cointegration Desk)
+After=network-online.target
+Wants=network-online.target
+# A crash that recurs >5x/min is a real fault, not a transient — let systemd stop
+# and surface it as `failed` instead of looping forever.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user/hypertrade
+EnvironmentFile=/home/ec2-user/.config/hypertrade/prod.env
+ExecStart=/home/ec2-user/hypertrade/.venv/bin/uvicorn hypertrade.daemon:app --host 127.0.0.1 --port 6487 --workers 1 --loop uvloop --http httptools --log-level info
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
