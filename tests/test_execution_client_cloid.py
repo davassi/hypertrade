@@ -201,3 +201,42 @@ def test_close_position_does_not_escalate_on_no_fill(monkeypatch):
 
     assert client.exchange.order.call_count == 1  # exactly one submission, no escalation
     assert result == no_fill
+
+
+def test_find_order_by_cloid_cancelled_returns_none(monkeypatch):
+    """An order found by cloid but with a terminal CANCEL/REJECT inner status (e.g.
+    an IOC that never matched -> iocCancelRejected) never landed a position. It must
+    be reported as NOT found (None), so the retry path cannot return a phantom
+    "already_placed" success that hides a naked / one-leg position from the bot."""
+    client = _client(monkeypatch)
+    cancelled = {
+        "status": "order",
+        "order": {"order": {"oid": 9}, "status": "iocCancelRejected"},
+    }
+
+    class _Resp:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return cancelled
+
+    monkeypatch.setattr(
+        "hypertrade.routes.hyperliquid_execution_client.requests.post",
+        lambda *a, **k: _Resp(),
+    )
+    assert client.find_order_by_cloid(_VALID_CLOID, user="0xMASTER") is None
+
+
+def test_update_leverage_forwards_is_cross_to_sdk(monkeypatch):
+    """The execution client must forward the margin mode to the SDK so isolated-only
+    assets (HIP-3 equity perps) can be set to isolated margin (is_cross=False)."""
+    client = _client(monkeypatch)
+    client.exchange.update_leverage.return_value = {"status": "ok"}
+
+    client.update_leverage(5, "xyz:SMSN", is_cross=False)
+
+    args, kwargs = client.exchange.update_leverage.call_args
+    # SDK signature: update_leverage(leverage, name, is_cross)
+    passed_is_cross = args[2] if len(args) > 2 else kwargs.get("is_cross")
+    assert passed_is_cross is False

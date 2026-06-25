@@ -82,9 +82,16 @@ class HyperliquidDataClient:
         return float(self._get_ctx(symbol)["premium"])
 
     def get_impact_prices(self, symbol: str) -> Tuple[float, float]:
-        """Return the buy/sell impact prices for a symbol."""
-        buy_px, sell_px = self._get_ctx(symbol)["impactPxs"]
-        return float(buy_px), float(sell_px)
+        """Return ``(buy_impact, sell_impact)`` for a symbol.
+
+        Hyperliquid's asset-ctx ``impactPxs`` is ``[impactBid, impactAsk]``. To FILL,
+        an aggressive order must CROSS the spread: a BUY up into the ASK, a SELL down
+        into the BID. So the buy uses ``impactPxs[1]`` (ask) and the sell ``impactPxs[0]``
+        (bid). NB: this previously returned them SWAPPED (buy=bid, sell=ask) — an
+        aggressive SELL was then priced off the ASK and, on wider-spread assets, never
+        crossed the bid (the xyz:KR200 IOC-cancel / one-leg-naked incident)."""
+        impact_bid, impact_ask = self._get_ctx(symbol)["impactPxs"]
+        return float(impact_ask), float(impact_bid)
 
     def get_meta(self, symbol: str) -> Dict[str, Any]:
         """Return the metadata entry for a symbol (dex-aware)."""

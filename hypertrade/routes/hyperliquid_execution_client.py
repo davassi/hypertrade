@@ -213,10 +213,15 @@ class HyperliquidExecutionClient:
         else:
             raise ValueError(f"Cannot handle order status: {status}")
         
-    def update_leverage(self, leverage: int, symbol: str) -> dict:
-        """Update leverage for a given symbol."""
+    def update_leverage(self, leverage: int, symbol: str, is_cross: bool = True) -> dict:
+        """Update leverage for a given symbol.
+
+        ``is_cross=False`` sets ISOLATED margin — required by isolated-only assets
+        such as HIP-3 equity perps (cross is rejected with "Cross margin is not
+        allowed for this asset").
+        """
         with translate_request_errors("update_leverage"):
-            return self.exchange.update_leverage(leverage, symbol)
+            return self.exchange.update_leverage(leverage, symbol, is_cross)
 
     def find_order_by_cloid(self, cloid: str, user: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Query the exchange for an order by client order id (cloid).
@@ -253,6 +258,14 @@ class HyperliquidExecutionClient:
 
         # "unknownOid" (or any non-"order" status) means the order never landed.
         if isinstance(data, dict) and data.get("status") == "order":
+            # An order RECORD exists, but it may be a terminal CANCEL/REJECT (e.g. an
+            # IOC that never matched -> "iocCancelRejected"): that landed NO position.
+            # Report it as not-found so the retry path never treats a cancelled order
+            # as a successful "already_placed" fill — which would hide a naked /
+            # one-leg position from the strategy bot (it must instead see a failure).
+            inner_status = str((data.get("order") or {}).get("status", "")).lower()
+            if "cancel" in inner_status or "reject" in inner_status:
+                return None
             return data
         return None
 

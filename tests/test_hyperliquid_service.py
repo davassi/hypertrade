@@ -16,7 +16,7 @@ if REPO_ROOT not in sys.path:
 import pytest
 
 from hypertrade.routes.hyperliquid_service import HyperliquidService, OrderRequest
-from hypertrade.routes.hyperliquid_errors import HyperliquidAPIError
+from hypertrade.routes.hyperliquid_errors import HyperliquidAPIError, HyperliquidValidationError
 from hypertrade.routes.tradingview_enums import Side, SignalType
 
 _FILLED = {"response": {"data": {"statuses": [{"filled": {"avgPx": "100", "totalSz": "1"}}]}}}
@@ -235,3 +235,62 @@ def test_plain_symbol_is_uppercased(monkeypatch):
     ))
     _, kwargs = client.market_order.call_args
     assert kwargs["symbol"] == "ETH"
+
+
+# ===================================================================
+# Leverage must actually apply or the trade is aborted (the naked-10x incident):
+# a failed update_leverage was previously only WARNED, so the order opened at the
+# exchange's default leverage. And HIP-3 equity perps are ISOLATED-ONLY.
+# ===================================================================
+
+def test_leverage_update_failure_aborts_trade(monkeypatch):
+    """A non-'ok' leverage response must ABORT the trade (raise) and place NO order,
+    never opening at the exchange's default leverage."""
+    svc, client = _service(monkeypatch)
+    client.update_leverage.return_value = {
+        "status": "err", "response": "Cross margin is not allowed for this asset."
+    }
+    with pytest.raises(HyperliquidValidationError):
+        svc.place_order(OrderRequest(
+            symbol="xyz:SMSN", side=Side.BUY, signal=SignalType.OPEN_LONG,
+            qty=Decimal("1"), price=Decimal("100"), leverage=2,
+        ))
+    client.market_order.assert_not_called()  # never reached order submission
+
+
+def test_dex_symbol_uses_isolated_margin(monkeypatch):
+    """HIP-3 dex/equity perps (':' in symbol) are isolated-only, so update_leverage
+    must be called with is_cross=False for them."""
+    svc, client = _service(monkeypatch)
+    svc.place_order(OrderRequest(
+        symbol="xyz:SMSN", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("1"), price=Decimal("100"), leverage=2,
+    ))
+    _, kwargs = client.update_leverage.call_args
+    assert kwargs.get("is_cross") is False
+
+
+def test_main_perp_uses_cross_margin(monkeypatch):
+    """Plain (non-dex) perps keep cross margin (is_cross=True) — unchanged behavior."""
+    svc, client = _service(monkeypatch)
+    svc.place_order(OrderRequest(
+        symbol="SOL", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("1"), price=Decimal("100"), leverage=2,
+    ))
+    _, kwargs = client.update_leverage.call_args
+    assert kwargs.get("is_cross") is True
+
+
+def test_close_order_skips_leverage_update(monkeypatch):
+    """A CLOSE/reduce order must NOT touch leverage: Hyperliquid can reject a margin/
+    leverage change while a position is OPEN, and the fatal-abort would then block the
+    EXIT (the worst failure for live money). Leverage is set on OPENS only; a leverage
+    error must never prevent flattening."""
+    svc, client = _service(monkeypatch)
+    client.update_leverage.return_value = {"status": "err", "response": "blocked on open position"}
+    svc.place_order(OrderRequest(
+        symbol="xyz:SMSN", side=Side.SELL, signal=SignalType.CLOSE_LONG,
+        qty=Decimal("1"), price=Decimal("100"), leverage=2,
+    ))
+    client.update_leverage.assert_not_called()  # never touched on a close
+    client.close_position.assert_called_once()  # the exit still goes through

@@ -92,3 +92,20 @@ def test_normalize_price_rejects_nonpositive(monkeypatch):
     client = _client(monkeypatch, 4)
     with pytest.raises(ValueError):
         client._normalize_price("ETH", 0.0, is_buy=True)
+
+
+def test_aggressive_price_crosses_the_spread(monkeypatch):
+    """An aggressive IOC must CROSS to fill: a SELL priced at/below the bid, a BUY
+    at/above the ask. get_impact_prices returns (buy=ask, sell=bid); the premium then
+    pushes further across. Guards against re-swapping the buy/sell impact sides (the
+    KR200 non-fill, where the SELL was priced off the ask and never crossed)."""
+    client = _client(monkeypatch, 3)
+    # Wide-spread book: bid 1423.09, ask 1432.23 (the KR200 shape). Post-fix contract:
+    # get_impact_prices -> (buy_impact=ask, sell_impact=bid).
+    client.data.get_impact_prices = MagicMock(return_value=(1432.23, 1423.09))
+
+    sell_px = client._aggressive_price_from_impact("xyz:KR200", is_buy=False, premium_bps=40)
+    buy_px = client._aggressive_price_from_impact("xyz:KR200", is_buy=True, premium_bps=40)
+
+    assert sell_px <= 1423.09, f"SELL {sell_px} must cross down to the bid to fill"
+    assert buy_px >= 1432.23, f"BUY {buy_px} must cross up to the ask to fill"

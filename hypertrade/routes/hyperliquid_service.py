@@ -130,23 +130,38 @@ class HyperliquidService:
         )
 
         # ===================================================================
-        # Set the requested leverage
+        # Set the requested leverage — OPENS ONLY.
+        # A CLOSE/reduce order must never touch leverage: Hyperliquid can reject a
+        # margin/leverage change while a position is OPEN, and a fatal abort here would
+        # block the EXIT (the worst failure for live money). Closes leave it unchanged.
         # ===================================================================
         leverage = int(request.leverage or 1)
-        log.debug("Requested leverage: symbol=%s requested=%sx max_allowed=%sx", symbol, leverage, max_leverage)
-
-        if leverage < 1 or leverage > max_leverage:
-            log.warning("Leverage validation failed: symbol=%s requested=%sx max_allowed=%sx", symbol, leverage, max_leverage)
-            raise HyperliquidValidationError(f"Requested leverage {leverage}x is out of bounds (1–{max_leverage}x)")
-
-        # Update leverage first as shown in the SDK examples
-        log.debug("Updating leverage on exchange: symbol=%s leverage=%sx", symbol, leverage)
-        leverage_response = self.client.update_leverage(leverage, symbol)
-
-        if leverage_response.get('status') != 'ok':
-            log.warning("Leverage update may have failed: symbol=%s response=%s", symbol, json.dumps(leverage_response, indent=2))
+        is_close = bool(request.reduce_only) or request.signal in {SignalType.CLOSE_LONG, SignalType.CLOSE_SHORT}
+        if is_close:
+            log.debug("Close/reduce order — leaving leverage/margin unchanged: symbol=%s", symbol)
         else:
-            log.debug("Leverage updated successfully: symbol=%s leverage=%sx", symbol, leverage)
+            log.debug("Requested leverage: symbol=%s requested=%sx max_allowed=%sx", symbol, leverage, max_leverage)
+            if leverage < 1 or leverage > max_leverage:
+                log.warning("Leverage validation failed: symbol=%s requested=%sx max_allowed=%sx", symbol, leverage, max_leverage)
+                raise HyperliquidValidationError(f"Requested leverage {leverage}x is out of bounds (1–{max_leverage}x)")
+
+            # HIP-3 dex/equity perps (e.g. "xyz:SMSN") are ISOLATED-ONLY — Hyperliquid
+            # rejects a cross-margin leverage update on them ("Cross margin is not allowed
+            # for this asset"). Main perps keep the cross default.
+            is_cross = ":" not in symbol
+            log.debug("Updating leverage on exchange: symbol=%s leverage=%sx is_cross=%s", symbol, leverage, is_cross)
+            leverage_response = self.client.update_leverage(leverage, symbol, is_cross=is_cross)
+
+            # A failed leverage/margin update is FATAL: placing the order anyway would open
+            # at the exchange's DEFAULT leverage (the naked-10x incident). Abort the trade
+            # so the strategy bot sees a failure and never holds a wrong-leverage position.
+            if leverage_response.get('status') != 'ok':
+                log.error("Leverage update REJECTED: symbol=%s response=%s", symbol, json.dumps(leverage_response, indent=2))
+                raise HyperliquidValidationError(
+                    f"Leverage/margin update rejected for {symbol} "
+                    f"(requested {leverage}x, is_cross={is_cross}): {leverage_response.get('response')}"
+                )
+            log.debug("Leverage updated successfully: symbol=%s leverage=%sx is_cross=%s", symbol, leverage, is_cross)
 
         # ===================================================================
         # Position sizing

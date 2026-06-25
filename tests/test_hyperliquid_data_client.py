@@ -109,6 +109,22 @@ class _CountingPost:
         return _Resp()
 
 
+def test_get_impact_prices_buy_is_ask_sell_is_bid(monkeypatch):
+    """Hyperliquid's asset-ctx impactPxs = [impactBid, impactAsk]. A BUY must cross UP
+    into the ASK and a SELL DOWN into the BID, so get_impact_prices must return
+    (buy=ask, sell=bid). Bug: it returned them swapped (buy=bid, sell=ask), so an
+    aggressive SELL was priced off the ASK and failed to cross the bid on wider-spread
+    assets (the xyz:KR200 one-leg incident). _CountingPost ctx has impactPxs=[100,101]."""
+    fake_post = _CountingPost()
+    monkeypatch.setattr(
+        "hypertrade.routes.hyperliquid_data_client.requests.post", fake_post
+    )
+    client = _client(monkeypatch)
+    buy_impact, sell_impact = client.get_impact_prices("BTC")
+    assert buy_impact == 101.0   # BUY crosses the ASK (higher of the two)
+    assert sell_impact == 100.0  # SELL crosses the BID (lower of the two)
+
+
 def test_meta_fetch_memoized_per_instance(monkeypatch):
     """Multiple meta/ctx getters on ONE instance trigger a single network fetch."""
     fake_post = _CountingPost()
