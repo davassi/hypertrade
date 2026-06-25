@@ -131,12 +131,18 @@ class HyperliquidExecutionClient:
         reduce_only: bool = False,
         cloid: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Place a market-like order using IOC with price impact premium."""
-        
+        """Place a MARKET order: an IOC limit priced off the MID by the slippage cap."""
+
         size = float(size)  # defensive: the SDK wire-encoder rejects Decimal sizes
-        premium = premium_bps or self.default_premium_bps
+        # MARKET order: an IOC limit priced off the MID by the slippage cap (bps). A BUY crosses UP,
+        # a SELL crosses DOWN, so it fills against whatever liquidity sits within the cap regardless of
+        # spread — no dependence on impact prices. The cap is a worst-case bound; the IOC still fills
+        # at the best available price inside it.
+        slippage_bps = premium_bps or self.default_premium_bps
         is_buy = side == PositionSide.LONG
-        aggressive_px = self._aggressive_price_from_impact(symbol, is_buy=is_buy, premium_bps=premium)
+        mid = self.data.get_mid(symbol)
+        slip = slippage_bps / 10_000.0
+        aggressive_px = mid * (1.0 + slip) if is_buy else mid * (1.0 - slip)
         norm_px = self._normalize_price(symbol, aggressive_px, is_buy=is_buy)
 
         with translate_request_errors("market_order"):
@@ -306,12 +312,6 @@ class HyperliquidExecutionClient:
         
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"Failed to parse order response: {res}") from exc
-
-    def _aggressive_price_from_impact(self, symbol: str, is_buy: bool, premium_bps: float) -> float:
-        buy_impact, sell_impact = self.data.get_impact_prices(symbol)
-        factor = premium_bps / 10_000.0
-        price = buy_impact if is_buy else sell_impact
-        return price * (1.0 + factor) if is_buy else price * (1.0 - factor)
 
     def _get_tick_size(self, symbol: str) -> Decimal:
         """Return tick size (e.g., 0.001 for 3 decimals)"""

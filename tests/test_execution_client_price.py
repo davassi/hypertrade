@@ -20,7 +20,7 @@ REPO_ROOT = str(pathlib.Path(__file__).resolve().parents[1])
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from hypertrade.routes.hyperliquid_execution_client import HyperliquidExecutionClient
+from hypertrade.routes.hyperliquid_execution_client import HyperliquidExecutionClient, PositionSide
 
 
 def _client(monkeypatch, sz_decimals: int) -> HyperliquidExecutionClient:
@@ -94,18 +94,17 @@ def test_normalize_price_rejects_nonpositive(monkeypatch):
         client._normalize_price("ETH", 0.0, is_buy=True)
 
 
-def test_aggressive_price_crosses_the_spread(monkeypatch):
-    """An aggressive IOC must CROSS to fill: a SELL priced at/below the bid, a BUY
-    at/above the ask. get_impact_prices returns (buy=ask, sell=bid); the premium then
-    pushes further across. Guards against re-swapping the buy/sell impact sides (the
-    KR200 non-fill, where the SELL was priced off the ask and never crossed)."""
+def test_market_order_prices_off_mid_with_slippage(monkeypatch):
+    """A true MARKET order: an aggressive IOC priced off the MID by the slippage cap —
+    BUY above mid, SELL below mid — so it always crosses regardless of book shape (no
+    dependence on impact prices). Submitted as an IOC limit at mid*(1 ± slippage)."""
     client = _client(monkeypatch, 3)
-    # Wide-spread book: bid 1423.09, ask 1432.23 (the KR200 shape). Post-fix contract:
-    # get_impact_prices -> (buy_impact=ask, sell_impact=bid).
-    client.data.get_impact_prices = MagicMock(return_value=(1432.23, 1423.09))
+    client.data.get_mid = MagicMock(return_value=1000.0)
 
-    sell_px = client._aggressive_price_from_impact("xyz:KR200", is_buy=False, premium_bps=40)
-    buy_px = client._aggressive_price_from_impact("xyz:KR200", is_buy=True, premium_bps=40)
+    client.market_order(symbol="xyz:KR200", side=PositionSide.SHORT, size=1.0, premium_bps=500)
+    sell_px = client.exchange.order.call_args.args[3]   # exchange.order(coin, is_buy, sz, px, ...)
+    assert sell_px == 950.0, f"SELL must price 5% BELOW mid (crosses down to fill), got {sell_px}"
 
-    assert sell_px <= 1423.09, f"SELL {sell_px} must cross down to the bid to fill"
-    assert buy_px >= 1432.23, f"BUY {buy_px} must cross up to the ask to fill"
+    client.market_order(symbol="xyz:KR200", side=PositionSide.LONG, size=1.0, premium_bps=500)
+    buy_px = client.exchange.order.call_args.args[3]
+    assert buy_px == 1050.0, f"BUY must price 5% ABOVE mid (crosses up to fill), got {buy_px}"

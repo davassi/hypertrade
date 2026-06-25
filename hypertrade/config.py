@@ -73,12 +73,12 @@ class Settings(BaseSettings):
     rate_limit_only_paths: List[str] = []
     rate_limit_exclude_paths: List[str] = ["/health"]
 
-    # Market order execution premium (basis points)
-    # Controls how aggressively orders cross the spread for IOC fills
-    # Lower = less slippage cost, but may fail to fill in volatile markets
-    # Higher = better fill rate, but higher execution cost
-    # Recommended range: 30-60 bps for liquid assets, 60-100 for illiquid
-    market_order_premium_bps: int = 40
+    # MARKET-order slippage cap (basis points OFF MID) for the marketable IOC:
+    # BUY at mid*(1 + x), SELL at mid*(1 - x). This is a WORST-CASE bound — the IOC
+    # still fills at the best available price inside it — so it is set generous enough
+    # to always cross the spread (HL's own market default is ~5%). Validator caps at 500.
+    # Lower it (env HYPERTRADE_MARKET_ORDER_PREMIUM_BPS) for tighter slippage control.
+    market_order_premium_bps: int = 500
 
     # Optional webhook secret; if set, incoming payloads must include
     # `general.secret` matching this value
