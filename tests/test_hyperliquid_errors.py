@@ -18,13 +18,39 @@ REPO_ROOT = str(pathlib.Path(__file__).resolve().parents[1])
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from hyperliquid.utils.error import ClientError, ServerError
+
 from hypertrade.routes import hyperliquid_errors as errors
 from hypertrade.routes import hyperliquid_service
 from hypertrade.routes.hyperliquid_errors import (
     HyperliquidAPIError,
     HyperliquidNetworkError,
+    HyperliquidValidationError,
     translate_request_errors,
 )
+
+
+def test_sdk_client_error_4xx_maps_to_validation_error():
+    """An SDK ClientError (4xx exchange rejection: bad price, insufficient margin) is PERMANENT for
+    that order → HyperliquidValidationError (no retry → the desk classifies it terminal and pauses
+    fast). Previously it escaped the taxonomy → HTTP 500 → desk 'transient' → ~1h retry before pause."""
+    with pytest.raises(HyperliquidValidationError):
+        with translate_request_errors("order"):
+            raise ClientError(422, "rejected", "invalid price", {})
+
+
+def test_sdk_client_error_429_maps_to_network_error():
+    """A 429 (rate-limited) ClientError is retryable → HyperliquidNetworkError, not terminal."""
+    with pytest.raises(HyperliquidNetworkError):
+        with translate_request_errors("order"):
+            raise ClientError(429, "rate", "too many requests", {})
+
+
+def test_sdk_server_error_maps_to_network_error():
+    """An SDK ServerError (5xx server hiccup) is transient → HyperliquidNetworkError (retryable)."""
+    with pytest.raises(HyperliquidNetworkError):
+        with translate_request_errors("order"):
+            raise ServerError(503, "service unavailable")
 
 
 def test_connection_error_maps_to_network_error():

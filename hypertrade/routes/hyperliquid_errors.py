@@ -14,6 +14,7 @@ import contextlib
 from typing import Iterator
 
 import requests
+from hyperliquid.utils.error import ClientError, ServerError
 
 
 class HyperliquidError(Exception):
@@ -70,3 +71,18 @@ def translate_request_errors(context: str) -> Iterator[None]:
         raise HyperliquidAPIError(f"{context}: {exc}") from exc
     except requests.RequestException as exc:
         raise HyperliquidNetworkError(f"{context}: {exc}") from exc
+    except ClientError as exc:
+        # The SDK raises ClientError for a 4xx from the exchange (order rejected: invalid price,
+        # insufficient margin, ...). These do NOT derive from requests.RequestException, so without
+        # this they escape as an unhandled 500 → the desk classifies them 'transient' and retries for
+        # up to ~1h before pausing. A 4xx is PERMANENT for that order → ValidationError (no retry →
+        # desk treats it terminal → fast auto-pause). 429 (rate-limited) is the one retryable case.
+        if getattr(exc, "status_code", None) == 429:
+            raise HyperliquidNetworkError(f"{context}: rate-limited: {getattr(exc, 'error_message', exc)}") from exc
+        raise HyperliquidValidationError(
+            f"{context}: exchange rejected ({getattr(exc, 'status_code', '?')} "
+            f"{getattr(exc, 'error_code', '?')}): {getattr(exc, 'error_message', exc)}"
+        ) from exc
+    except ServerError as exc:
+        # The SDK raises ServerError for a 5xx — a transient server-side hiccup → retryable.
+        raise HyperliquidNetworkError(f"{context}: server error ({getattr(exc, 'status_code', '?')}): {getattr(exc, 'message', exc)}") from exc
