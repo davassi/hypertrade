@@ -32,6 +32,7 @@ from .hyperliquid_service import (
     HyperliquidValidationError,
     HyperliquidNetworkError,
     HyperliquidAPIError,
+    HyperliquidRejection,
 )
 
 router = APIRouter(tags=["webhooks"])
@@ -105,6 +106,16 @@ async def _place_order_with_retry(client: HyperliquidService, order_request: Ord
             # Hyperliquid; run it off the event loop so concurrent requests
             # (and the health check) are not stalled while an order is in flight.
             return await asyncio.to_thread(client.place_order, order_request)
+        except HyperliquidRejection as e:
+            # An exchange REJECTION (insufficient margin / could-not-match / bad price / 4xx) gets
+            # exactly ONE fast, fresh-priced retry — a momentary reject can clear on a re-fetched mid —
+            # then is surfaced TERMINAL (HyperliquidRejection ⊂ ValidationError → HTTP 400 → the strategy
+            # bot pauses/unwinds fast, NEVER the ~1h desk transient-retry). Logged on every attempt.
+            if attempt < 1:
+                log.warning("Order REJECTED (attempt %d) — retrying once with a fresh price: %s", attempt + 1, str(e))
+                continue
+            log.error("Order REJECTED again after one retry — surfacing terminal (no further retry): %s", str(e))
+            raise
         except HyperliquidValidationError:
             # Don't retry validation errors - they're permanent
             log.warning("Order validation failed, not retrying: %s", order_request)

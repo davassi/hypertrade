@@ -33,6 +33,14 @@ class HyperliquidAPIError(HyperliquidError):
     """Raised for API-level errors from Hyperliquid."""
 
 
+class HyperliquidRejection(HyperliquidValidationError):
+    """An exchange REJECTION of a specific order (insufficient margin, could-not-match, bad price,
+    or a 4xx from the SDK). Subclass of ValidationError so the webhook surfaces it TERMINAL (HTTP 400
+    → the strategy bot treats it terminal and pauses/unwinds fast, never the ~1h desk transient-retry).
+    The retry loop gives it exactly ONE fast, fresh-priced retry before surfacing it (a momentary
+    reject can clear); plain ValidationError (pre-trade checks: leverage bounds, size) is never retried."""
+
+
 @contextlib.contextmanager
 def translate_request_errors(context: str) -> Iterator[None]:
     """Translate raw `requests` transport errors into the Hyperliquid taxonomy.
@@ -79,7 +87,7 @@ def translate_request_errors(context: str) -> Iterator[None]:
         # desk treats it terminal → fast auto-pause). 429 (rate-limited) is the one retryable case.
         if getattr(exc, "status_code", None) == 429:
             raise HyperliquidNetworkError(f"{context}: rate-limited: {getattr(exc, 'error_message', exc)}") from exc
-        raise HyperliquidValidationError(
+        raise HyperliquidRejection(
             f"{context}: exchange rejected ({getattr(exc, 'status_code', '?')} "
             f"{getattr(exc, 'error_code', '?')}): {getattr(exc, 'error_message', exc)}"
         ) from exc

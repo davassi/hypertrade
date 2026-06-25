@@ -16,7 +16,7 @@ if REPO_ROOT not in sys.path:
 import pytest
 
 from hypertrade.routes.hyperliquid_service import HyperliquidService, OrderRequest
-from hypertrade.routes.hyperliquid_errors import HyperliquidAPIError, HyperliquidValidationError
+from hypertrade.routes.hyperliquid_errors import HyperliquidAPIError, HyperliquidValidationError, HyperliquidRejection
 from hypertrade.routes.tradingview_enums import Side, SignalType
 
 _FILLED = {"response": {"data": {"statuses": [{"filled": {"avgPx": "100", "totalSz": "1"}}]}}}
@@ -166,28 +166,28 @@ def test_find_order_by_cloid_returns_none_when_absent(monkeypatch):
 # 200/ok — a phantom fill that desyncs the strategy bot.
 # ===================================================================
 
-def test_exchange_error_status_raises_api_error(monkeypatch):
-    """An exchange-level error in statuses[0] must raise HyperliquidAPIError (-> 502),
-    never be reported as a placed order."""
+def test_exchange_error_status_raises_rejection(monkeypatch):
+    """An exchange-level error in statuses[0] must surface as a HyperliquidRejection (terminal after
+    one retry → HTTP 400 → fast pause), never be reported as a placed order."""
     svc, client = _service(monkeypatch)
     client.market_order.return_value = {
         "response": {"data": {"statuses": [{"error": "Order has invalid price."}]}}
     }
-    with pytest.raises(HyperliquidAPIError):
+    with pytest.raises(HyperliquidRejection):
         svc.place_order(OrderRequest(
             symbol="SOL", side=Side.BUY, signal=SignalType.OPEN_LONG,
             qty=Decimal("1"), price=Decimal("100"), leverage=1,
         ))
 
 
-def test_exchange_error_status_on_close_raises_api_error(monkeypatch):
+def test_exchange_error_status_on_close_raises_rejection(monkeypatch):
     """The close path shares the same status interpretation, so an error there
-    must surface too."""
+    must surface too (as a HyperliquidRejection)."""
     svc, client = _service(monkeypatch)
     client.close_position.return_value = {
         "response": {"data": {"statuses": [{"error": "insufficient margin"}]}}
     }
-    with pytest.raises(HyperliquidAPIError):
+    with pytest.raises(HyperliquidRejection):
         svc.place_order(OrderRequest(
             symbol="SOL", side=Side.SELL, signal=SignalType.CLOSE_LONG,
             qty=Decimal("1"), price=Decimal("100"), leverage=1,

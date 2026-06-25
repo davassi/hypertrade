@@ -31,8 +31,29 @@ from hypertrade.routes.hyperliquid_errors import (
     HyperliquidNetworkError,
     HyperliquidAPIError,
     HyperliquidValidationError,
+    HyperliquidRejection,
 )
 from hypertrade.routes.tradingview_enums import Side, SignalType
+
+
+async def test_order_rejection_retries_once_then_surfaces_terminal():
+    """An exchange order rejection (margin / could-not-match / bad price / 4xx) gets exactly ONE
+    fresh-priced retry, then is surfaced as-is (terminal — HyperliquidRejection ⊂ ValidationError →
+    HTTP 400 → desk pauses/unwinds fast, never the ~1h transient-retry). Two submits total."""
+    submits = {"n": 0}
+
+    class RejectingClient:
+        def place_order(self, req):
+            submits["n"] += 1
+            raise HyperliquidRejection("Exchange rejected order: could not immediately match")
+
+        def find_order_by_cloid(self, cloid):
+            return None  # the rejected order never landed → safe to resubmit on the retry
+
+    cloid = _derive_cloid("nonce-reject")
+    with pytest.raises(HyperliquidRejection):
+        await _place_order_with_retry(RejectingClient(), _order_request(cloid=cloid), max_retries=2)
+    assert submits["n"] == 2  # initial submit + exactly one retry, then terminal
 
 
 def _order_request(cloid: str | None = None) -> OrderRequest:

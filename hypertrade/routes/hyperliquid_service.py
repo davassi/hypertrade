@@ -15,6 +15,7 @@ from .hyperliquid_errors import (
     HyperliquidNetworkError,
     HyperliquidValidationError,
     HyperliquidAPIError,
+    HyperliquidRejection,
 )
 
 log = logging.getLogger("uvicorn.error")
@@ -231,7 +232,10 @@ class HyperliquidService:
                 # (invalid price, insufficient margin, ...). Surface it instead of
                 # reporting a phantom success, or the strategy bot desyncs from reality.
                 log.error("Order rejected by exchange: symbol=%s error=%s", symbol, status["error"])
-                raise HyperliquidAPIError(f"Exchange rejected order: {status['error']}")
+                # A recoverable exchange rejection (insufficient margin / could-not-match / bad price):
+                # HyperliquidRejection gets ONE fresh-priced retry in the webhook loop, then surfaces
+                # TERMINAL (HTTP 400 → fast pause) — NOT a 502 'transient' the desk would retry for ~1h.
+                raise HyperliquidRejection(f"Exchange rejected order: {status['error']}")
             else:
                 log.error("Unexpected order status: symbol=%s status=%s", symbol, status)
                 raise HyperliquidAPIError(f"Unexpected order status: {status}")
