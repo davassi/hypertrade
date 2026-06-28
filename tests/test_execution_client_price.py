@@ -129,3 +129,22 @@ def test_market_order_logs_submitted_pricing(monkeypatch, caplog):
         "mid=1000" in m and "norm_px=1050" in m and ("0x" + "a" * 32) in m
         for m in msgs
     ), msgs
+
+
+def test_limit_order_logs_submitted_pricing(monkeypatch, caplog):
+    """limit_order logs the normalized price it is about to submit, tagged with cloid."""
+    import logging as _logging
+    client = _client(monkeypatch, 3)
+    client.exchange.order.return_value = {
+        "response": {"data": {"statuses": [{"resting": {"oid": 1}}]}}
+    }
+    with caplog.at_level(_logging.INFO, logger="uvicorn.error"):
+        client.limit_order(
+            symbol="SOL", side=PositionSide.LONG, size=2.0, price=21.987,
+            tif="Gtc", cloid="0x" + "c" * 32,
+        )
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any(
+        "Submitting LIMIT" in m and "norm_price=" in m and ("0x" + "c" * 32) in m
+        for m in msgs
+    ), msgs

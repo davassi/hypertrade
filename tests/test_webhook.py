@@ -950,8 +950,11 @@ def test_network_failure_logs_error_and_correlation(monkeypatch, caplog):
 
 
 def test_failure_logs_do_not_leak_secret(monkeypatch, caplog):
-    """A failing order must not emit the webhook secret in failure-level (WARNING+)
-    logs. (The DEBUG full-payload log is out of scope and excluded by the level.)"""
+    """A failing ORDER (the order-execution failure path) must not emit the webhook
+    secret in failure-level (WARNING+) logs. NOTE: this guards the order path only —
+    it does NOT cover the invalid-JSON path (_log_invalid_json_body logs the raw body
+    at WARNING; see TECH_DEBT). Capturing at WARNING also excludes the out-of-scope
+    DEBUG full-payload log."""
     import logging as _logging
     StubHyperliquidService.reset()
     StubHyperliquidService.should_fail = True

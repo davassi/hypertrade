@@ -330,6 +330,7 @@ async def hypertrade_webhook(
         if reservation.outcome is ReserveOutcome.IN_FLIGHT:
             raise HTTPException(status_code=409, detail="Duplicate request in flight")
 
+    handler_ctx = format_log_context(req_id=req_id, cloid=cloid, symbol=symbol, side=side.value)
     placed_ok = False
     try:
         log.info("Attempting to place order on Hyperliquid: symbol=%s side=%s", symbol, side.value)
@@ -338,7 +339,7 @@ async def hypertrade_webhook(
     except HyperliquidValidationError as e:
         log.warning(
             "Order validation error: %s | %s", e,
-            format_log_context(req_id=req_id, cloid=cloid, symbol=symbol, side=side.value),
+            handler_ctx,
         )
         if db and req_id:
             db.log_order(
@@ -364,7 +365,7 @@ async def hypertrade_webhook(
     except HyperliquidNetworkError as e:
         log.error(
             "Network error placing order (after retries): %s | %s", e,
-            format_log_context(req_id=req_id, cloid=cloid, symbol=symbol, side=side.value),
+            handler_ctx,
         )
         if db and req_id:
             db.log_order(
@@ -393,7 +394,7 @@ async def hypertrade_webhook(
     except HyperliquidAPIError as e:
         log.error(
             "API error placing order (after retries): %s | %s", e,
-            format_log_context(req_id=req_id, cloid=cloid, symbol=symbol, side=side.value),
+            handler_ctx,
         )
         if db and req_id:
             db.log_order(

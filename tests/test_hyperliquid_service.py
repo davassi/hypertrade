@@ -334,3 +334,5 @@ def test_no_response_logs_context(monkeypatch, caplog):
             ))
     msg = " ".join(r.getMessage() for r in caplog.records)
     assert "symbol=SOL" in msg and "req_id=req-456" in msg and ("cloid=0x" + "b" * 32) in msg
+    assert "side=buy" in msg
+    assert "size=1" in msg
