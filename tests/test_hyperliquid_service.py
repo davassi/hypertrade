@@ -294,3 +294,43 @@ def test_close_order_skips_leverage_update(monkeypatch):
     ))
     client.update_leverage.assert_not_called()  # never touched on a close
     client.close_position.assert_called_once()  # the exit still goes through
+
+
+def test_exchange_reject_logs_full_context(monkeypatch, caplog):
+    """On an exchange reject the ERROR log must carry the order context (symbol,
+    side, size, cloid, req_id) and the error/payload, not just the error string."""
+    import logging as _logging
+    svc, client = _service(monkeypatch)
+    client.market_order.return_value = {
+        "response": {"data": {"statuses": [{"error": "Order has invalid price."}]}}
+    }
+    with caplog.at_level(_logging.ERROR, logger="uvicorn.error"):
+        with pytest.raises(HyperliquidRejection):
+            svc.place_order(OrderRequest(
+                symbol="SOL", side=Side.BUY, signal=SignalType.OPEN_LONG,
+                qty=Decimal("2"), price=Decimal("100"), leverage=3,
+                cloid="0x" + "a" * 32, req_id="req-123",
+            ))
+    msg = " ".join(r.getMessage() for r in caplog.records)
+    assert "symbol=SOL" in msg
+    assert "side=buy" in msg
+    assert "size=2" in msg
+    assert ("cloid=0x" + "a" * 32) in msg
+    assert "req_id=req-123" in msg
+    assert "Order has invalid price." in msg
+
+
+def test_no_response_logs_context(monkeypatch, caplog):
+    """A None exchange response is logged with the order context before raising."""
+    import logging as _logging
+    svc, client = _service(monkeypatch)
+    client.market_order.return_value = None
+    with caplog.at_level(_logging.ERROR, logger="uvicorn.error"):
+        with pytest.raises(HyperliquidAPIError):
+            svc.place_order(OrderRequest(
+                symbol="SOL", side=Side.BUY, signal=SignalType.OPEN_LONG,
+                qty=Decimal("1"), price=Decimal("100"), leverage=1,
+                cloid="0x" + "b" * 32, req_id="req-456",
+            ))
+    msg = " ".join(r.getMessage() for r in caplog.records)
+    assert "symbol=SOL" in msg and "req_id=req-456" in msg and ("cloid=0x" + "b" * 32) in msg

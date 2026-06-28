@@ -17,8 +17,19 @@ from .hyperliquid_errors import (
     HyperliquidAPIError,
     HyperliquidRejection,
 )
+from hypertrade.logging import format_log_context
 
 log = logging.getLogger("uvicorn.error")
+
+def _safe_json(obj: object) -> str:
+    """json.dumps that never raises — falls back to repr for non-serialisable payloads.
+
+    A logging path must never mask the original failure with a serialisation error.
+    """
+    try:
+        return json.dumps(obj)
+    except (TypeError, ValueError):
+        return repr(obj)
 
 @dataclass
 class OrderRequest:
@@ -161,7 +172,15 @@ class HyperliquidService:
             # at the exchange's DEFAULT leverage (the naked-10x incident). Abort the trade
             # so the strategy bot sees a failure and never holds a wrong-leverage position.
             if leverage_response.get('status') != 'ok':
-                log.error("Leverage update REJECTED: symbol=%s response=%s", symbol, json.dumps(leverage_response, indent=2))
+                log.error(
+                    "Leverage update REJECTED | %s | response=%s",
+                    format_log_context(
+                        symbol=symbol, requested_leverage=leverage,
+                        max_leverage=max_leverage, is_cross=is_cross,
+                        cloid=request.cloid, req_id=request.req_id,
+                    ),
+                    _safe_json(leverage_response),
+                )
                 raise HyperliquidValidationError(
                     f"Leverage/margin update rejected for {symbol} "
                     f"(requested {leverage}x, is_cross={is_cross}): {leverage_response.get('response')}"
@@ -218,13 +237,27 @@ class HyperliquidService:
         
         # Safe printing – handle both filled and error cases
         if res is None:
-            log.error("Order execution failed: symbol=%s side=%s size=%s (no response from API)", symbol, request.side, size)
+            log.error(
+                "Order execution failed (no response from API) | %s",
+                format_log_context(
+                    symbol=symbol, side=request.side.value, size=size,
+                    reduce_only=request.reduce_only,
+                    cloid=request.cloid, req_id=request.req_id,
+                ),
+            )
             raise HyperliquidAPIError("Order Creation did not work")
         else:
             try:
                 status = res["response"]["data"]["statuses"][0]
             except (KeyError, TypeError, IndexError) as exc:
-                log.error("Unexpected order response shape: symbol=%s response=%s", symbol, res)
+                log.error(
+                    "Unexpected order response shape | %s | response=%s",
+                    format_log_context(
+                        symbol=symbol, side=request.side.value, size=size,
+                        cloid=request.cloid, req_id=request.req_id,
+                    ),
+                    _safe_json(res),
+                )
                 raise HyperliquidAPIError(f"Unexpected order response shape: {res}") from exc
             if "filled" in status:
                 st = status["filled"]
@@ -235,13 +268,29 @@ class HyperliquidService:
                 # The exchange accepted the request shape but rejected the order
                 # (invalid price, insufficient margin, ...). Surface it instead of
                 # reporting a phantom success, or the strategy bot desyncs from reality.
-                log.error("Order rejected by exchange: symbol=%s error=%s", symbol, status["error"])
+                log.error(
+                    "Order rejected by exchange | %s | error=%s | response=%s",
+                    format_log_context(
+                        symbol=symbol, side=request.side.value, size=size,
+                        reduce_only=request.reduce_only, leverage=leverage,
+                        cloid=request.cloid, req_id=request.req_id,
+                    ),
+                    status["error"],
+                    _safe_json(res),
+                )
                 # A recoverable exchange rejection (insufficient margin / could-not-match / bad price):
                 # HyperliquidRejection gets ONE fresh-priced retry in the webhook loop, then surfaces
                 # TERMINAL (HTTP 400 → fast pause) — NOT a 502 'transient' the desk would retry for ~1h.
                 raise HyperliquidRejection(f"Exchange rejected order: {status['error']}")
             else:
-                log.error("Unexpected order status: symbol=%s status=%s", symbol, status)
+                log.error(
+                    "Unexpected order status | %s | status=%s",
+                    format_log_context(
+                        symbol=symbol, side=request.side.value, size=size,
+                        cloid=request.cloid, req_id=request.req_id,
+                    ),
+                    _safe_json(status),
+                )
                 raise HyperliquidAPIError(f"Unexpected order status: {status}")
 
         return res
