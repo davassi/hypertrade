@@ -582,7 +582,7 @@ def secret_enforcement(request: Request, raw: dict) -> None:
             raise HTTPException(status_code=401, detail="Unauthorized: invalid webhook secret")
 
 
-_SECRET_FIELD_RE = re.compile(r'("secret"\s*:\s*")[^"]*(")')
+_SECRET_FIELD_RE = re.compile(r'("secret"\s*:\s*")[^"]*(")', re.IGNORECASE)
 
 
 def _redact_secrets(text: str, secret: Optional[str]) -> str:
@@ -613,12 +613,17 @@ async def _log_invalid_json_body(request: Request) -> None:
         body_text = body_bytes.decode("utf-8", errors="replace")
     except (RuntimeError, UnicodeDecodeError):
         body_text = "<unreadable>"
-    settings = get_settings()
-    secret = (
-        settings.webhook_secret.get_secret_value()
-        if getattr(settings, "webhook_secret", None)
-        else None
-    )
+    # Fetching the secret must never turn this logging helper into a 500 — fall
+    # back to None (the regex still masks the JSON `secret` field) on any failure.
+    try:
+        settings = get_settings()
+        secret = (
+            settings.webhook_secret.get_secret_value()
+            if getattr(settings, "webhook_secret", None)
+            else None
+        )
+    except Exception:  # pylint: disable=broad-except
+        secret = None
     req_id = getattr(request.state, "request_id", None)
     log.warning("Invalid JSON body req_id=%s body=%s", req_id, _redact_secrets(body_text, secret))
 
