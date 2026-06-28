@@ -264,6 +264,7 @@ async def hypertrade_webhook(
         leverage=leverage,
         subaccount=vault_address,
         cloid=cloid,
+        req_id=req_id,
     )
 
     log.debug(

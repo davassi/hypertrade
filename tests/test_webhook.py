@@ -909,3 +909,17 @@ def test_dex_qualified_symbol_preserves_case(monkeypatch):
     assert resp2.status_code == 200, resp2.text
     assert resp2.json()["symbol"] == "LINK"
     assert StubHyperliquidService.last_order_request.symbol == "LINK"
+
+
+def test_order_request_carries_req_id(monkeypatch):
+    """The webhook must thread its request id onto OrderRequest so downstream
+    failure logs can correlate back to the originating request."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    resp = client.post("/webhook", json=copy.deepcopy(BASE_PAYLOAD))
+    assert resp.status_code == 200, resp.text
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req is not None
+    assert isinstance(order_req.req_id, str) and order_req.req_id

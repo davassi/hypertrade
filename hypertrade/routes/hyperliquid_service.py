@@ -38,6 +38,10 @@ class OrderRequest:
     # by the webhook layer so that a retry of the same request reuses the same
     # cloid, letting us query the exchange for it before resubmitting (TD-1).
     cloid: Optional[str] = None
+    # Request-scoped correlation id (the webhook's req_id). Threaded onto the
+    # request so failure logs in the service/webhook layers can be tied back to
+    # the originating request. Distinct from cloid (the exchange-side order id).
+    req_id: Optional[str] = None
 
 @dataclass
 class OrderResult:
