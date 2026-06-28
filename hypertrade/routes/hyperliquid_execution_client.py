@@ -10,6 +10,7 @@ from eth_account import Account
 from hyperliquid.exchange import Exchange
 from hyperliquid.utils.types import Cloid
 from hypertrade.config import get_settings
+from hypertrade.logging import format_log_context
 from .hyperliquid_data_client import HyperliquidDataClient
 from .hyperliquid_errors import translate_request_errors
 
@@ -110,6 +111,16 @@ class HyperliquidExecutionClient:
         is_buy = side == PositionSide.LONG
         norm_price = self._normalize_price(symbol, price, is_buy=is_buy)
 
+        log.info(
+            "Submitting LIMIT %s | %s",
+            tif,
+            format_log_context(
+                symbol=symbol, side=side.value, size=size,
+                price=price, norm_price=norm_price,
+                reduce_only=reduce_only, cloid=cloid,
+            ),
+        )
+
         with translate_request_errors("limit_order"):
             res = self.exchange.order(
                 symbol,          # ← positional: coin
@@ -144,6 +155,16 @@ class HyperliquidExecutionClient:
         slip = slippage_bps / 10_000.0
         aggressive_px = mid * (1.0 + slip) if is_buy else mid * (1.0 - slip)
         norm_px = self._normalize_price(symbol, aggressive_px, is_buy=is_buy)
+
+        log.info(
+            "Submitting MARKET IOC | %s",
+            format_log_context(
+                symbol=symbol, side=side.value, size=size,
+                mid=f"{mid:.6f}", slippage_bps=slippage_bps,
+                aggressive_px=f"{aggressive_px:.6f}", norm_px=norm_px,
+                reduce_only=reduce_only, cloid=cloid,
+            ),
+        )
 
         with translate_request_errors("market_order"):
             return self.exchange.order(
