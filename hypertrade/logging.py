@@ -14,6 +14,16 @@ from .version import __version__
 log = pylog.getLogger("uvicorn.error")
 
 
+def format_log_context(**fields: object) -> str:
+    """Format diagnostic fields as a space-separated ``key=value`` string.
+
+    Used to build a uniform correlation/context suffix for failure log lines so
+    the prefix is defined once (no copy-paste across call sites). Skips fields
+    whose value is ``None``; never raises.
+    """
+    return " ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
+
+
 def configure_logging(log_level: str = "INFO") -> None:
     """Configure Python logging to use the specified level."""
     level = log_level.upper()
