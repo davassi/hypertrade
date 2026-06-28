@@ -923,3 +923,27 @@ def test_order_request_carries_req_id(monkeypatch):
     order_req = StubHyperliquidService.last_order_request
     assert order_req is not None
     assert isinstance(order_req.req_id, str) and order_req.req_id
+
+
+def test_network_failure_logs_error_and_correlation(monkeypatch, caplog):
+    """The terminal retry line must carry the underlying error string AND
+    correlation (cloid); the handler line must carry the req_id."""
+    import logging as _logging
+    StubHyperliquidService.reset()
+    StubHyperliquidService.should_fail = True
+    StubHyperliquidService.failure_type = "network"
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    with caplog.at_level(_logging.WARNING, logger="uvicorn.error"):
+        resp = client.post("/webhook", json=copy.deepcopy(BASE_PAYLOAD))
+    assert resp.status_code == 503
+
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any(
+        "Order placement failed after" in m and "Network timeout" in m and "cloid=" in m
+        for m in msgs
+    ), msgs
+    assert any(
+        "Network error placing order" in m and "req_id=" in m for m in msgs
+    ), msgs
