@@ -966,5 +966,6 @@ def test_failure_logs_do_not_leak_secret(monkeypatch, caplog):
         resp = client.post("/webhook", json=payload)
     assert resp.status_code == 502
 
+    assert len(caplog.records) > 0, "Expected at least one WARNING+ record from the failure path"
     for record in caplog.records:
         assert "topsecret-xyz" not in record.getMessage()
