@@ -88,7 +88,7 @@ code before acting.
 
 ## Resolved
 
-- 2026-06-28 `56cfa04` — **TD-18**: the invalid-JSON debug log now redacts the
+- 2026-06-28 `0fbd9f4` — **TD-18**: the invalid-JSON debug log now redacts the
   webhook secret. `routes/webhooks.py::_log_invalid_json_body` passes the raw body
   through `_redact_secrets` (masks any `"secret": "…"` field via pattern + the
   configured secret value verbatim), so a malformed payload can no longer leak
