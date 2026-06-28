@@ -909,3 +909,111 @@ def test_dex_qualified_symbol_preserves_case(monkeypatch):
     assert resp2.status_code == 200, resp2.text
     assert resp2.json()["symbol"] == "LINK"
     assert StubHyperliquidService.last_order_request.symbol == "LINK"
+
+
+def test_order_request_carries_req_id(monkeypatch):
+    """The webhook must thread its request id onto OrderRequest so downstream
+    failure logs can correlate back to the originating request."""
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    resp = client.post("/webhook", json=copy.deepcopy(BASE_PAYLOAD))
+    assert resp.status_code == 200, resp.text
+    order_req = StubHyperliquidService.last_order_request
+    assert order_req is not None
+    assert isinstance(order_req.req_id, str) and order_req.req_id
+
+
+def test_network_failure_logs_error_and_correlation(monkeypatch, caplog):
+    """The terminal retry line must carry the underlying error string AND
+    correlation (cloid); the handler line must carry the req_id."""
+    import logging as _logging
+    StubHyperliquidService.reset()
+    StubHyperliquidService.should_fail = True
+    StubHyperliquidService.failure_type = "network"
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    with caplog.at_level(_logging.WARNING, logger="uvicorn.error"):
+        resp = client.post("/webhook", json=copy.deepcopy(BASE_PAYLOAD))
+    assert resp.status_code == 503
+
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any(
+        "Order placement failed after" in m and "Network timeout" in m and "cloid=" in m
+        for m in msgs
+    ), msgs
+    assert any(
+        "Network error placing order" in m and "req_id=" in m for m in msgs
+    ), msgs
+
+
+def test_failure_logs_do_not_leak_secret(monkeypatch, caplog):
+    """A failing ORDER (the order-execution failure path) must not emit the webhook
+    secret in failure-level (WARNING+) logs. The invalid-JSON path is guarded
+    separately by test_invalid_json_body_log_redacts_secret (TD-18). Capturing at
+    WARNING also excludes the out-of-scope DEBUG full-payload log."""
+    import logging as _logging
+    StubHyperliquidService.reset()
+    StubHyperliquidService.should_fail = True
+    StubHyperliquidService.failure_type = "api"
+    app = make_app(monkeypatch, secret="topsecret-xyz")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["general"]["secret"] = "topsecret-xyz"
+
+    with caplog.at_level(_logging.WARNING, logger="uvicorn.error"):
+        resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 502
+
+    assert len(caplog.records) > 0, "Expected at least one WARNING+ record from the failure path"
+    for record in caplog.records:
+        assert "topsecret-xyz" not in record.getMessage()
+
+
+# ===================================================================
+# TD-18: the invalid-JSON debug log must not leak the webhook secret
+# ===================================================================
+
+def test_redact_secrets_masks_field_and_configured_value():
+    """_redact_secrets masks both a JSON `secret` field and the configured secret
+    value wherever it appears, and leaves secret-free text untouched (TD-18)."""
+    from hypertrade.routes.webhooks import _redact_secrets
+
+    # A JSON `secret` field is masked by pattern even with no configured secret.
+    out1 = _redact_secrets('{"general": {"secret": "abc123"}}', None)
+    assert "abc123" not in out1
+    assert "REDACTED" in out1
+
+    # The configured secret value is masked wherever it appears, even unquoted/malformed.
+    out2 = _redact_secrets("noise sek-XYZ trailing", "sek-XYZ")
+    assert "sek-XYZ" not in out2
+    assert "REDACTED" in out2
+
+    # Secret-free text is returned unchanged.
+    assert _redact_secrets('{"a": 1}', None) == '{"a": 1}'
+
+    # An empty/None configured secret must not corrupt the text (no per-char replace).
+    assert _redact_secrets("plain text", "") == "plain text"
+
+
+def test_invalid_json_body_log_redacts_secret(monkeypatch, caplog):
+    """A malformed JSON body, logged for debugging, must not leak the webhook
+    secret at WARNING level — while still logging the (redacted) body (TD-18)."""
+    import logging as _logging
+    app = make_app(monkeypatch, secret="topsecret-xyz")
+    client = TestClient(app)
+
+    # Trailing comma -> invalid JSON -> 422 -> _log_invalid_json_body runs.
+    bad = b'{"general":{"secret":"topsecret-xyz"},}'
+    with caplog.at_level(_logging.WARNING, logger="uvicorn.error"):
+        resp = client.post("/webhook", content=bad, headers={"Content-Type": "application/json"})
+    assert resp.status_code == 422
+
+    body_logs = [r.getMessage() for r in caplog.records if "Invalid JSON body" in r.getMessage()]
+    assert body_logs, "expected an 'Invalid JSON body' WARNING record"
+    joined = " ".join(body_logs)
+    assert "topsecret-xyz" not in joined
+    assert "REDACTED" in joined

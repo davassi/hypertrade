@@ -57,6 +57,7 @@ def _client(monkeypatch) -> HyperliquidExecutionClient:
     # Deterministic aggressive price so we don't depend on impact data.
     client._aggressive_price_from_impact = MagicMock(return_value=100.0)
     client._normalize_price = MagicMock(return_value=100.0)
+    client.data.get_mid = MagicMock(return_value=1000.0)
     return client
 
 

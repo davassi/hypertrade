@@ -7,6 +7,7 @@ import hmac
 import sqlite3
 import time
 import json
+import re
 
 from datetime import datetime, timezone
 from typing import Optional
@@ -25,6 +26,7 @@ from ..security import require_ip_whitelisted, require_bearer_secret
 
 from ..routes.tradingview_enums import SignalType, PositionType, OrderAction, Side
 from ..idempotency import ReserveOutcome
+from ..logging import format_log_context
 
 from .hyperliquid_service import (
     HyperliquidService,
@@ -83,6 +85,12 @@ async def _place_order_with_retry(client: HyperliquidService, order_request: Ord
         HyperliquidNetworkError: For network errors (retried)
     """
     cloid = order_request.cloid
+    ctx = format_log_context(
+        symbol=order_request.symbol,
+        side=getattr(order_request.side, "value", order_request.side),
+        cloid=cloid,
+        req_id=order_request.req_id,
+    )
     for attempt in range(max_retries + 1):
         # Before any RETRY (attempt > 0) carrying a cloid, confirm the order did
         # not already land under that cloid — never resubmit a possibly-live order.
@@ -112,24 +120,24 @@ async def _place_order_with_retry(client: HyperliquidService, order_request: Ord
             # then is surfaced TERMINAL (HyperliquidRejection ⊂ ValidationError → HTTP 400 → the strategy
             # bot pauses/unwinds fast, NEVER the ~1h desk transient-retry). Logged on every attempt.
             if attempt < 1:
-                log.warning("Order REJECTED (attempt %d) — retrying once with a fresh price: %s", attempt + 1, str(e))
+                log.warning("Order REJECTED (attempt %d) — retrying once with a fresh price: %s | %s", attempt + 1, str(e), ctx)
                 continue
-            log.error("Order REJECTED again after one retry — surfacing terminal (no further retry): %s", str(e))
+            log.error("Order REJECTED again after one retry — surfacing terminal (no further retry): %s | %s", str(e), ctx)
             raise
-        except HyperliquidValidationError:
+        except HyperliquidValidationError as e:
             # Don't retry validation errors - they're permanent
-            log.warning("Order validation failed, not retrying: %s", order_request)
+            log.warning("Order validation failed, not retrying: %s | %s | order=%s", str(e), ctx, order_request)
             raise
         except (HyperliquidNetworkError, HyperliquidAPIError) as e:
             if attempt < max_retries:
                 wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s...
                 log.warning(
-                    "Order placement attempt %d/%d failed, retrying in %ds: %s",
-                    attempt + 1, max_retries + 1, wait_time, str(e)
+                    "Order placement attempt %d/%d failed, retrying in %ds: %s | %s",
+                    attempt + 1, max_retries + 1, wait_time, str(e), ctx
                 )
                 await asyncio.sleep(wait_time)
             else:
-                log.error("Order placement failed after %d attempts", max_retries + 1)
+                log.error("Order placement failed after %d attempts: %s | %s", max_retries + 1, str(e), ctx)
                 raise
 
 
@@ -264,6 +272,7 @@ async def hypertrade_webhook(
         leverage=leverage,
         subaccount=vault_address,
         cloid=cloid,
+        req_id=req_id,
     )
 
     log.debug(
@@ -322,13 +331,17 @@ async def hypertrade_webhook(
         if reservation.outcome is ReserveOutcome.IN_FLIGHT:
             raise HTTPException(status_code=409, detail="Duplicate request in flight")
 
+    handler_ctx = format_log_context(req_id=req_id, cloid=cloid, symbol=symbol, side=side.value)
     placed_ok = False
     try:
         log.info("Attempting to place order on Hyperliquid: symbol=%s side=%s", symbol, side.value)
         result = await _place_order_with_retry(client, order_request, max_retries=2)
         placed_ok = True
     except HyperliquidValidationError as e:
-        log.warning("Order validation error: %s", e)
+        log.warning(
+            "Order validation error: %s | %s", e,
+            handler_ctx,
+        )
         if db and req_id:
             db.log_order(
                 request_id=req_id,
@@ -351,7 +364,10 @@ async def hypertrade_webhook(
             )
         raise HTTPException(status_code=400, detail=f"Invalid order: {e}") from e
     except HyperliquidNetworkError as e:
-        log.error("Network error placing order (after retries): %s", e)
+        log.error(
+            "Network error placing order (after retries): %s | %s", e,
+            handler_ctx,
+        )
         if db and req_id:
             db.log_order(
                 request_id=req_id,
@@ -377,7 +393,10 @@ async def hypertrade_webhook(
             detail="Temporary service unavailable - order may have been placed, check manually"
         ) from e
     except HyperliquidAPIError as e:
-        log.error("API error placing order (after retries): %s", e)
+        log.error(
+            "API error placing order (after retries): %s | %s", e,
+            handler_ctx,
+        )
         if db and req_id:
             db.log_order(
                 request_id=req_id,
@@ -563,15 +582,50 @@ def secret_enforcement(request: Request, raw: dict) -> None:
             raise HTTPException(status_code=401, detail="Unauthorized: invalid webhook secret")
 
 
+_SECRET_FIELD_RE = re.compile(r'("secret"\s*:\s*")[^"]*(")', re.IGNORECASE)
+
+
+def _redact_secrets(text: str, secret: Optional[str]) -> str:
+    """Redact credential material from a raw request body before logging (TD-18).
+
+    Masks (1) any JSON ``"secret": "<value>"`` field via pattern, and (2) the
+    configured webhook secret wherever it appears verbatim — so a malformed
+    payload logged for debugging on the invalid-JSON path never leaks
+    ``general.secret`` at WARNING level. Best-effort on malformed input: an
+    unterminated ``secret`` field may evade the pattern, but a configured secret
+    is still masked by the literal replacement. Never raises.
+    """
+    redacted = _SECRET_FIELD_RE.sub(r"\1***REDACTED***\2", text)
+    if secret:
+        redacted = redacted.replace(secret, "***REDACTED***")
+    return redacted
+
+
 async def _log_invalid_json_body(request: Request) -> None:
-    """Log the full request body when JSON parsing fails, with req_id."""
+    """Log the request body when JSON parsing fails, with req_id.
+
+    The body is redacted of the webhook secret before logging (TD-18): a
+    malformed payload is still useful for debugging, but ``general.secret`` must
+    never reach the logs at WARNING level.
+    """
     try:
         body_bytes = await request.body()
         body_text = body_bytes.decode("utf-8", errors="replace")
     except (RuntimeError, UnicodeDecodeError):
         body_text = "<unreadable>"
+    # Fetching the secret must never turn this logging helper into a 500 — fall
+    # back to None (the regex still masks the JSON `secret` field) on any failure.
+    try:
+        settings = get_settings()
+        secret = (
+            settings.webhook_secret.get_secret_value()
+            if getattr(settings, "webhook_secret", None)
+            else None
+        )
+    except Exception:  # pylint: disable=broad-except
+        secret = None
     req_id = getattr(request.state, "request_id", None)
-    log.warning("Invalid JSON body req_id=%s body=%s", req_id, body_text)
+    log.warning("Invalid JSON body req_id=%s body=%s", req_id, _redact_secrets(body_text, secret))
 
 def _require_json_content_type(request: Request) -> None:
     """Ensure the request has application/json content type or raise 415."""

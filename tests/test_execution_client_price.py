@@ -108,3 +108,43 @@ def test_market_order_prices_off_mid_with_slippage(monkeypatch):
     client.market_order(symbol="xyz:KR200", side=PositionSide.LONG, size=1.0, premium_bps=500)
     buy_px = client.exchange.order.call_args.args[3]
     assert buy_px == 1050.0, f"BUY must price 5% ABOVE mid (crosses up to fill), got {buy_px}"
+
+
+def test_market_order_logs_submitted_pricing(monkeypatch, caplog):
+    """Before submitting a MARKET IOC, the client logs the mid and the exact
+    aggressive/normalized price it is about to send, tagged with the cloid — the
+    primary diagnostic for a 'bad price / could not match' reject."""
+    import logging as _logging
+    client = _client(monkeypatch, 3)
+    client.data.get_mid = MagicMock(return_value=1000.0)
+
+    with caplog.at_level(_logging.INFO, logger="uvicorn.error"):
+        client.market_order(
+            symbol="SOL", side=PositionSide.LONG, size=2.0,
+            premium_bps=500, cloid="0x" + "a" * 32,
+        )
+
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any(
+        "mid=1000" in m and "norm_px=1050" in m and ("0x" + "a" * 32) in m
+        for m in msgs
+    ), msgs
+
+
+def test_limit_order_logs_submitted_pricing(monkeypatch, caplog):
+    """limit_order logs the normalized price it is about to submit, tagged with cloid."""
+    import logging as _logging
+    client = _client(monkeypatch, 3)
+    client.exchange.order.return_value = {
+        "response": {"data": {"statuses": [{"resting": {"oid": 1}}]}}
+    }
+    with caplog.at_level(_logging.INFO, logger="uvicorn.error"):
+        client.limit_order(
+            symbol="SOL", side=PositionSide.LONG, size=2.0, price=21.987,
+            tif="Gtc", cloid="0x" + "c" * 32,
+        )
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any(
+        "Submitting LIMIT" in m and "norm_price=" in m and ("0x" + "c" * 32) in m
+        for m in msgs
+    ), msgs

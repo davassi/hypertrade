@@ -88,6 +88,12 @@ code before acting.
 
 ## Resolved
 
+- 2026-06-28 `0fbd9f4` — **TD-18**: the invalid-JSON debug log now redacts the
+  webhook secret. `routes/webhooks.py::_log_invalid_json_body` passes the raw body
+  through `_redact_secrets` (masks any `"secret": "…"` field via pattern + the
+  configured secret value verbatim), so a malformed payload can no longer leak
+  `general.secret` at WARNING level. Covered by
+  `test_invalid_json_body_log_redacts_secret`.
 - 2026-06-22 `25cf438` — **TD-2**: domain errors mapped into the taxonomy —
   unknown symbol → `HyperliquidValidationError` (400), malformed exchange
   response → `HyperliquidAPIError` (502); no more raw 500s on the order path.
