@@ -947,3 +947,24 @@ def test_network_failure_logs_error_and_correlation(monkeypatch, caplog):
     assert any(
         "Network error placing order" in m and "req_id=" in m for m in msgs
     ), msgs
+
+
+def test_failure_logs_do_not_leak_secret(monkeypatch, caplog):
+    """A failing order must not emit the webhook secret in failure-level (WARNING+)
+    logs. (The DEBUG full-payload log is out of scope and excluded by the level.)"""
+    import logging as _logging
+    StubHyperliquidService.reset()
+    StubHyperliquidService.should_fail = True
+    StubHyperliquidService.failure_type = "api"
+    app = make_app(monkeypatch, secret="topsecret-xyz")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["general"]["secret"] = "topsecret-xyz"
+
+    with caplog.at_level(_logging.WARNING, logger="uvicorn.error"):
+        resp = client.post("/webhook", json=payload)
+    assert resp.status_code == 502
+
+    for record in caplog.records:
+        assert "topsecret-xyz" not in record.getMessage()
