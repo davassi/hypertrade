@@ -54,18 +54,6 @@ code before acting.
   is already timing-safe (`hmac.compare_digest`). Accepted; revisit only if a
   header path becomes possible.
 
-- **[TD-18] Invalid-JSON path logs the full raw body at WARNING** (`P2`) —
-  `routes/webhooks.py::_log_invalid_json_body` logs the entire raw request body
-  (`log.warning("Invalid JSON body req_id=%s body=%s", req_id, body_text)`) to aid
-  debugging a malformed payload. If that body contains a readable `general.secret`
-  (the credential travels in the body — see [TD-9]), the secret is emitted at
-  WARNING+, i.e. at the production log level, not just DEBUG. The order-execution
-  *failure* path was explicitly hardened against secret leakage
-  (`test_failure_logs_do_not_leak_secret`), but this invalid-JSON path was not.
-  *Fix:* redact/skip the body (or log only its length + a structural hint) on the
-  invalid-JSON path, mirroring [TD-16]'s "don't log the credential" rule.
-  Pre-existing; surfaced during the order-failure-logging review (2026-06-28).
-
 ### Maintainability
 
 - **[TD-10] `routes/webhooks.py` is 751 lines** (`P2`) —
@@ -100,6 +88,12 @@ code before acting.
 
 ## Resolved
 
+- 2026-06-28 `56cfa04` — **TD-18**: the invalid-JSON debug log now redacts the
+  webhook secret. `routes/webhooks.py::_log_invalid_json_body` passes the raw body
+  through `_redact_secrets` (masks any `"secret": "…"` field via pattern + the
+  configured secret value verbatim), so a malformed payload can no longer leak
+  `general.secret` at WARNING level. Covered by
+  `test_invalid_json_body_log_redacts_secret`.
 - 2026-06-22 `25cf438` — **TD-2**: domain errors mapped into the taxonomy —
   unknown symbol → `HyperliquidValidationError` (400), malformed exchange
   response → `HyperliquidAPIError` (502); no more raw 500s on the order path.

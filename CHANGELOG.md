@@ -38,9 +38,10 @@ status codes, DB schema, or pricing/submission logic.
 Design: `docs/superpowers/specs/2026-06-28-order-failure-logging-design.md` ·
 Plan: `docs/superpowers/plans/2026-06-28-order-failure-logging.md`.
 
-### Noted
+### Fixed
 
-- **TD-18** (tech-debt register): the *invalid-JSON* path
-  (`_log_invalid_json_body`) still logs the raw request body at WARNING, which can
-  expose `general.secret` on a malformed payload. Pre-existing and out of scope of
-  the above (which hardened the order path); tracked for a follow-up redaction.
+- **TD-18** — the *invalid-JSON* path (`_log_invalid_json_body`) no longer leaks
+  the webhook secret. The raw body, logged at WARNING for debugging, is now passed
+  through `_redact_secrets`, which masks any `"secret": "…"` field and the
+  configured secret value before logging. Surfaced during the order-failure-logging
+  review and fixed on the same branch.

@@ -951,10 +951,9 @@ def test_network_failure_logs_error_and_correlation(monkeypatch, caplog):
 
 def test_failure_logs_do_not_leak_secret(monkeypatch, caplog):
     """A failing ORDER (the order-execution failure path) must not emit the webhook
-    secret in failure-level (WARNING+) logs. NOTE: this guards the order path only —
-    it does NOT cover the invalid-JSON path (_log_invalid_json_body logs the raw body
-    at WARNING; see TECH_DEBT). Capturing at WARNING also excludes the out-of-scope
-    DEBUG full-payload log."""
+    secret in failure-level (WARNING+) logs. The invalid-JSON path is guarded
+    separately by test_invalid_json_body_log_redacts_secret (TD-18). Capturing at
+    WARNING also excludes the out-of-scope DEBUG full-payload log."""
     import logging as _logging
     StubHyperliquidService.reset()
     StubHyperliquidService.should_fail = True
@@ -972,3 +971,49 @@ def test_failure_logs_do_not_leak_secret(monkeypatch, caplog):
     assert len(caplog.records) > 0, "Expected at least one WARNING+ record from the failure path"
     for record in caplog.records:
         assert "topsecret-xyz" not in record.getMessage()
+
+
+# ===================================================================
+# TD-18: the invalid-JSON debug log must not leak the webhook secret
+# ===================================================================
+
+def test_redact_secrets_masks_field_and_configured_value():
+    """_redact_secrets masks both a JSON `secret` field and the configured secret
+    value wherever it appears, and leaves secret-free text untouched (TD-18)."""
+    from hypertrade.routes.webhooks import _redact_secrets
+
+    # A JSON `secret` field is masked by pattern even with no configured secret.
+    out1 = _redact_secrets('{"general": {"secret": "abc123"}}', None)
+    assert "abc123" not in out1
+    assert "REDACTED" in out1
+
+    # The configured secret value is masked wherever it appears, even unquoted/malformed.
+    out2 = _redact_secrets("noise sek-XYZ trailing", "sek-XYZ")
+    assert "sek-XYZ" not in out2
+    assert "REDACTED" in out2
+
+    # Secret-free text is returned unchanged.
+    assert _redact_secrets('{"a": 1}', None) == '{"a": 1}'
+
+    # An empty/None configured secret must not corrupt the text (no per-char replace).
+    assert _redact_secrets("plain text", "") == "plain text"
+
+
+def test_invalid_json_body_log_redacts_secret(monkeypatch, caplog):
+    """A malformed JSON body, logged for debugging, must not leak the webhook
+    secret at WARNING level — while still logging the (redacted) body (TD-18)."""
+    import logging as _logging
+    app = make_app(monkeypatch, secret="topsecret-xyz")
+    client = TestClient(app)
+
+    # Trailing comma -> invalid JSON -> 422 -> _log_invalid_json_body runs.
+    bad = b'{"general":{"secret":"topsecret-xyz"},}'
+    with caplog.at_level(_logging.WARNING, logger="uvicorn.error"):
+        resp = client.post("/webhook", content=bad, headers={"Content-Type": "application/json"})
+    assert resp.status_code == 422
+
+    body_logs = [r.getMessage() for r in caplog.records if "Invalid JSON body" in r.getMessage()]
+    assert body_logs, "expected an 'Invalid JSON body' WARNING record"
+    joined = " ".join(body_logs)
+    assert "topsecret-xyz" not in joined
+    assert "REDACTED" in joined

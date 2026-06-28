@@ -7,6 +7,7 @@ import hmac
 import sqlite3
 import time
 import json
+import re
 
 from datetime import datetime, timezone
 from typing import Optional
@@ -581,15 +582,45 @@ def secret_enforcement(request: Request, raw: dict) -> None:
             raise HTTPException(status_code=401, detail="Unauthorized: invalid webhook secret")
 
 
+_SECRET_FIELD_RE = re.compile(r'("secret"\s*:\s*")[^"]*(")')
+
+
+def _redact_secrets(text: str, secret: Optional[str]) -> str:
+    """Redact credential material from a raw request body before logging (TD-18).
+
+    Masks (1) any JSON ``"secret": "<value>"`` field via pattern, and (2) the
+    configured webhook secret wherever it appears verbatim — so a malformed
+    payload logged for debugging on the invalid-JSON path never leaks
+    ``general.secret`` at WARNING level. Best-effort on malformed input: an
+    unterminated ``secret`` field may evade the pattern, but a configured secret
+    is still masked by the literal replacement. Never raises.
+    """
+    redacted = _SECRET_FIELD_RE.sub(r"\1***REDACTED***\2", text)
+    if secret:
+        redacted = redacted.replace(secret, "***REDACTED***")
+    return redacted
+
+
 async def _log_invalid_json_body(request: Request) -> None:
-    """Log the full request body when JSON parsing fails, with req_id."""
+    """Log the request body when JSON parsing fails, with req_id.
+
+    The body is redacted of the webhook secret before logging (TD-18): a
+    malformed payload is still useful for debugging, but ``general.secret`` must
+    never reach the logs at WARNING level.
+    """
     try:
         body_bytes = await request.body()
         body_text = body_bytes.decode("utf-8", errors="replace")
     except (RuntimeError, UnicodeDecodeError):
         body_text = "<unreadable>"
+    settings = get_settings()
+    secret = (
+        settings.webhook_secret.get_secret_value()
+        if getattr(settings, "webhook_secret", None)
+        else None
+    )
     req_id = getattr(request.state, "request_id", None)
-    log.warning("Invalid JSON body req_id=%s body=%s", req_id, body_text)
+    log.warning("Invalid JSON body req_id=%s body=%s", req_id, _redact_secrets(body_text, secret))
 
 def _require_json_content_type(request: Request) -> None:
     """Ensure the request has application/json content type or raise 415."""
