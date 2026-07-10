@@ -448,7 +448,7 @@ async def hypertrade_webhook(
         )
     
     # Finally: build a response.
-    response = _build_response(payload, signal=signal, side=side, symbol=symbol)
+    response = _build_response(payload, signal=signal, side=side, symbol=symbol, result=result)
 
     if idempotency is not None:
         # complete() persists the plain dict body for replay; _build_response must return a dict (not a Response object).
@@ -652,7 +652,7 @@ def _validate_schema(raw: dict) -> None:
         raise HTTPException(status_code=422, detail="JSON schema validation error") from exc
 
 def _build_response(
-    payload: TradingViewWebhook, *, signal: SignalType, side: Side, symbol: str
+    payload: TradingViewWebhook, *, signal: SignalType, side: Side, symbol: str, result: Optional[dict] = None
 ) -> dict:
     return {
         "status": "ok",
@@ -663,6 +663,8 @@ def _build_response(
         "action": payload.order.action,
         "contracts": str(payload.order.contracts),
         "price": str(payload.order.price),
+        "total_size": str(result.get("totalSz")) if result and result.get("totalSz") is not None else None,
+        "avg_price": str(result.get("avgPx")) if result and result.get("avgPx") is not None else None,
         "received_at": datetime.now(timezone.utc).isoformat(),
     }
 
