@@ -73,6 +73,28 @@ def test_reduce_signal_forwards_reduce_only_to_market_order(monkeypatch):
     assert kwargs.get("reduce_only") is True
 
 
+def test_place_order_surfaces_fill_at_top_level(monkeypatch):
+    """place_order must expose the ACTUAL fill (totalSz/avgPx) at the TOP level of its
+    return value. The SDK nests it under response.data.statuses[0].filled, but both consumers
+    — _build_response and the DB store — read result.get("totalSz")/("avgPx"), a top-level
+    lookup that returns None on the raw dict. Without surfacing it the webhook's total_size is
+    always null, so the desk never sees a partial IOC fill and its partial-fill handling never
+    fires (an illiquid leg's partial then desyncs the ledger → divergence auto-pause). The
+    _build_response unit test used a pre-flattened fixture and so never caught this seam.
+    """
+    svc, client = _service(monkeypatch)
+    # A real partial fill: requested 0.4233, only 0.0205 actually filled (illiquid leg).
+    client.market_order.return_value = {
+        "response": {"data": {"statuses": [{"filled": {"avgPx": "1189.2", "totalSz": "0.0205"}}]}}
+    }
+    res = svc.place_order(OrderRequest(
+        symbol="KR200", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("0.4233"), price=Decimal("1185.6"), leverage=3,
+    ))
+    assert res.get("totalSz") == "0.0205"
+    assert res.get("avgPx") == "1189.2"
+
+
 def test_cloid_forwarded_to_market_order(monkeypatch):
     """The OrderRequest.cloid must be threaded down to the execution client so the
     submitted order carries the deterministic client order id."""

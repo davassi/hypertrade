@@ -262,6 +262,14 @@ class HyperliquidService:
             if "filled" in status:
                 st = status["filled"]
                 log.info("Order filled successfully: symbol=%s size=%s avg_price=%s total_sz=%s", symbol, size, st["avgPx"], st["totalSz"])
+                # Surface the ACTUAL fill at the top level. The SDK nests it under
+                # response.data.statuses[0].filled, but the webhook response builder and the DB
+                # store both read result.get("totalSz")/("avgPx") — a top-level lookup that returns
+                # None on the raw dict. Without this, the webhook's total_size is always null, so the
+                # desk never sees a partial IOC fill and its partial-fill handling never fires (an
+                # illiquid leg partial then desyncs the ledger from the exchange → divergence pause).
+                res["totalSz"] = st["totalSz"]
+                res["avgPx"] = st["avgPx"]
             elif "resting" in status:
                 log.info("Order resting (not yet filled): symbol=%s status=%s", symbol, status)
             elif "error" in status:
