@@ -52,8 +52,10 @@ The payload has four required objects: `general`, `currency`, `order`, `market`.
 > (`kFLOKI`) next to genuinely upper-case K names (`KAS`, `KAITO`), so no lexical
 > rule can repair a corrupted spelling — only the universe can. The daemon does
 > resolve a mis-cased base, but that repair is unavailable in dry-run, so send the
-> venue spelling. The response and the persisted order row report the spelling
-> **actually traded**, which may differ from the one you sent.
+> venue spelling. On a **successful placement** the response and the persisted
+> order row report the spelling **actually traded**, which may differ from the one
+> you sent. Rows written for a rejected or failed placement keep the spelling as
+> received — nothing was traded, so there is no venue spelling to report.
 
 ---
 

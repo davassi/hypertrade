@@ -972,6 +972,37 @@ def test_reports_and_persists_the_symbol_the_exchange_actually_traded(monkeypatc
     assert [o["symbol"] for o in written] == ["kFLOKI"]
 
 
+def test_already_placed_retry_reports_the_coin_the_exchange_holds(monkeypatch):
+    """The resubmit-guard path must report the venue's spelling too.
+
+    When a retry finds the order already landed, we never reach place_order and
+    so never learn its resolved spelling from the result. Falling back to the
+    handler's own guess writes a PLACED row naming a coin that does not exist —
+    the same orphan the traded-symbol fix removes from the normal path, hiding
+    on the one path that only runs when the network is already misbehaving.
+    The exchange's own orderStatus payload names the coin; use it.
+    """
+    StubHyperliquidService.reset()
+    StubHyperliquidService.should_fail = True          # attempt 0 fails transiently
+    StubHyperliquidService.failure_type = "network"
+    StubHyperliquidService.find_order_result = {       # ...but the order did land
+        "status": "order",
+        "order": {"order": {"oid": 77, "coin": "kFLOKI"}, "status": "open"},
+    }
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+    seen = {o["request_id"] for o in app.state.db.get_orders(limit=1000)}
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["currency"]["base"] = "kfloki"
+    resp = client.post("/webhook", json=payload)
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["symbol"] == "kFLOKI"
+    written = [o for o in app.state.db.get_orders(limit=1000) if o["request_id"] not in seen]
+    assert [o["symbol"] for o in written] == ["kFLOKI"]
+
+
 def test_order_request_carries_req_id(monkeypatch):
     """The webhook must thread its request id onto OrderRequest so downstream
     failure logs can correlate back to the originating request."""

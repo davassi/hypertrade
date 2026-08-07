@@ -105,6 +105,9 @@ async def _place_order_with_retry(client: HyperliquidService, order_request: Ord
                 return {
                     "status": "already_placed",
                     "orderId": _extract_oid(existing),
+                    # The exchange's record is the only source of the venue
+                    # spelling here — place_order never ran to resolve it.
+                    "symbol": _extract_coin(existing),
                     "cloid": cloid,
                     "found_order": existing,
                 }
@@ -152,6 +155,21 @@ def _extract_oid(found_order: dict) -> Optional[int]:
         return found_order["order"]["order"]["oid"]
     except (KeyError, TypeError):
         return None
+
+
+def _extract_coin(found_order: dict) -> Optional[str]:
+    """Best-effort extraction of the coin from an orderStatus payload.
+
+    On the resubmit-guard path we never reach place_order, so the exchange's own
+    record is the only place the venue's spelling can come from. Nested beside
+    the oid as ``order.order.coin``; tolerate missing keys, and let the caller
+    fall back rather than raise.
+    """
+    try:
+        coin = found_order["order"]["order"]["coin"]
+    except (KeyError, TypeError):
+        return None
+    return coin if isinstance(coin, str) and coin else None
 
 @router.post(
     "/webhook",

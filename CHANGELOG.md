@@ -38,6 +38,12 @@ A universe-fetch failure propagates instead of degrading to a guess — the gues
 reaches the exchange as 'not found', which the retry loop treats as permanent, so
 one dropped POST would turn a fillable order into a terminal reject.
 
+The resubmit guard reports the venue spelling too. When a retry finds the order
+already landed, `place_order` never ran, so its resolved spelling is unavailable;
+the coin is taken from the exchange's own `orderStatus` payload instead of falling
+back to the handler's guess. Rows for a rejected or failed placement keep the
+spelling as received — nothing traded, so there is no venue spelling to report.
+
 ### Added — Order-failure diagnostic logging (2026-06-28)
 
 When an order fails, the logs now carry enough context to reconstruct the root
