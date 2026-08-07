@@ -248,3 +248,97 @@ def test_get_meta_is_dex_aware(monkeypatch):
     client.get_meta("xyz:XYZ100")
     after = len([p for p in seen if p.get("type") == "metaAndAssetCtxs"])
     assert after == before
+
+
+def test_canonical_symbol_resolves_case_against_the_venue_universe(monkeypatch):
+    """The universe is the only authority on a coin's spelling.
+
+    Hyperliquid ships lower-case k-contracts (kFLOKI) alongside genuinely
+    upper-case K names (KAITO) in the same universe, so no lexical rule can
+    repair a corrupted spelling — only a lookup can. Resolution is dex-aware
+    and reuses the per-dex meta cache, so it costs no extra round-trip on a
+    path that already fetches meta.
+    """
+    def _post(_url, json=None, timeout=None):  # noqa: A002 - mirror requests API
+        dex = (json or {}).get("dex")
+        uni = (
+            [{"name": "xyz:KR200", "szDecimals": 4, "maxLeverage": 30}]
+            if dex == "xyz" else
+            [{"name": "kFLOKI", "szDecimals": 0, "maxLeverage": 5},
+             {"name": "KAITO", "szDecimals": 1, "maxLeverage": 10}]
+        )
+
+        class _Resp:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> list:
+                return [{"universe": uni}, [{} for _ in uni]]
+
+        return _Resp()
+
+    monkeypatch.setattr(
+        "hypertrade.routes.hyperliquid_data_client.requests.post", _post
+    )
+    client = _client(monkeypatch)
+
+    assert client.canonical_symbol("KFLOKI") == "kFLOKI"
+    assert client.canonical_symbol("kfloki") == "kFLOKI"
+    assert client.canonical_symbol("KAITO") == "KAITO"
+    assert client.canonical_symbol("xyz:kr200") == "xyz:KR200"
+
+
+def test_canonical_symbol_propagates_a_venue_outage_as_retryable(monkeypatch):
+    """A transport blip must stay a transport blip.
+
+    Degrading to the lexical rule here looks harmless but is not: the best-effort
+    spelling then reaches the exchange, and when it is wrong the venue answers
+    'not found' — a HyperliquidValidationError, which the webhook retry loop
+    treats as PERMANENT and refuses to retry. One dropped POST would turn an
+    order that used to fill into a terminal reject, and on a CLOSE that strands
+    an open position. Surfacing the network error keeps the request retryable.
+    """
+    def _raise(*_args, **_kwargs):
+        raise requests.ConnectionError("connection refused")
+
+    monkeypatch.setattr(
+        "hypertrade.routes.hyperliquid_data_client.requests.post", _raise
+    )
+    client = _client(monkeypatch)
+
+    with pytest.raises(HyperliquidNetworkError):
+        client.canonical_symbol("kFLOKI")
+
+
+def test_canonical_symbol_adds_no_round_trip_to_the_order_path(monkeypatch):
+    """Resolution must reuse the memo the order path was going to populate anyway.
+
+    place_order canonicalises and then immediately fetches mid/mark/meta. If
+    resolution fetched its own copy of the universe it would add a network
+    round-trip in front of every order.
+    """
+    posts = []
+
+    def _post(_url, json=None, timeout=None):  # noqa: A002 - mirror requests API
+        posts.append(json)
+
+        class _Resp:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> list:
+                uni = [{"name": "kFLOKI", "szDecimals": 0, "maxLeverage": 5}]
+                return [{"universe": uni}, [{"markPx": "1", "midPx": "1"}]]
+
+        return _Resp()
+
+    monkeypatch.setattr(
+        "hypertrade.routes.hyperliquid_data_client.requests.post", _post
+    )
+    client = _client(monkeypatch)
+
+    symbol = client.canonical_symbol("KFLOKI")
+    client.get_meta(symbol)
+
+    assert symbol == "kFLOKI"
+    assert len([p for p in posts if p.get("type") == "metaAndAssetCtxs"]) == 1

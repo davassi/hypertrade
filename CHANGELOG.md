@@ -5,6 +5,39 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed — Hyperliquid k-contracts were unreachable (2026-08-07)
+
+An order for `kFLOKI` was upper-cased to `KFLOKI`, which does not exist on
+Hyperliquid, and the exchange rejected it with
+`Symbol 'KFLOKI' not found in Hyperliquid universe`. In production this left the
+calling desk holding a filled AZTEC leg against a rejected kFLOKI leg, which it
+had to unwind. All seven 1000x contracts (`kPEPE`, `kSHIB`, `kBONK`, `kLUNC`,
+`kFLOKI`, `kDOGS`, `kNEIRO`) were affected — 7 of the venue's 232 main-perp coins.
+
+The venue is case-sensitive and lists `KAS` and `KAITO` alongside the k-contracts,
+so no lexical rule can decide the right spelling. Both `.upper()` call sites are
+replaced by one shared module, `hypertrade/routes/symbols.py`:
+
+- `normalize_symbol` — the boundary rule where the venue is out of reach (the
+  webhook handler runs before any client exists, and dry-run returns without
+  building one). Upper-cases free text; never destroys case a caller supplied.
+- `canonical_symbol` / `HyperliquidDataClient.canonical_symbol` — resolves against
+  the venue universe, which is the authority. Exact hit wins, so a caller's precise
+  spelling is never swapped for a case-folded sibling; two markets differing only
+  by case with no exact hit raise rather than guess. Dex-aware, and reuses the
+  per-dex meta memo, so it adds no round-trip on the order path.
+
+`place_order` now resolves the symbol before anything is keyed by it, and
+**reports the spelling it actually traded** on its result. The webhook records and
+returns that value: previously both layers applied the same idempotent rule, so
+reported-equalled-traded for free; once the layers differ, recording the handler's
+version would name a coin that was never traded and show up as an orphan in the
+desk's reconciler.
+
+A universe-fetch failure propagates instead of degrading to a guess — the guess
+reaches the exchange as 'not found', which the retry loop treats as permanent, so
+one dropped POST would turn a fillable order into a terminal reject.
+
 ### Added — Order-failure diagnostic logging (2026-06-28)
 
 When an order fails, the logs now carry enough context to reconstruct the root

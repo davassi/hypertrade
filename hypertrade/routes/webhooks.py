@@ -27,6 +27,7 @@ from ..security import require_ip_whitelisted, require_bearer_secret
 from ..routes.tradingview_enums import SignalType, PositionType, OrderAction, Side
 from ..idempotency import ReserveOutcome
 from ..logging import format_log_context
+from .symbols import normalize_symbol
 
 from .hyperliquid_service import (
     HyperliquidService,
@@ -208,12 +209,10 @@ async def hypertrade_webhook(
             "order_id": payload.order.id,
         })
     
-    # Builder-deployed (HIP-3) dex coins are dex-qualified ("xyz:KR200") and the
-    # dex prefix is case-sensitive on Hyperliquid — uppercasing corrupts it to
-    # "XYZ:KR200". Normalize case only for plain (Binance-style) bases; pass
-    # dex-qualified coins through verbatim.
-    raw_base = payload.currency.base
-    symbol = raw_base if ":" in raw_base else raw_base.upper()
+    # Spelling is resolved here without the venue: this runs before any client
+    # exists and dry-run returns below without ever building one. place_order
+    # canonicalises against the universe once it holds a client.
+    symbol = normalize_symbol(payload.currency.base)
     # contracts/price are already validated as Decimal by the Pydantic model;
     # keep them as Decimal so exchange-bound sizing/pricing stays exact (a float
     # round-trip corrupts precision, e.g. Decimal(0.1_float) != Decimal("0.1")).
@@ -428,11 +427,18 @@ async def hypertrade_webhook(
 
     log.info("Order placed successfully: %s", result)
 
+    # Report and record the spelling the exchange actually traded. `symbol` above
+    # was resolved without the venue; place_order resolves against the universe and
+    # can legitimately land on a different string (kFLOKI vs KFLOKI). Recording ours
+    # would name a coin that was never traded, and the desk's reconciler — which
+    # compares its ledger against exchange positions — would report an orphan.
+    traded_symbol = (result or {}).get("symbol") or symbol
+
     # Log successful order
     if db and req_id:
         db.log_order(
             request_id=req_id,
-            symbol=symbol,
+            symbol=traded_symbol,
             side=side.value,
             signal=signal.value,
             quantity=contracts,
@@ -448,7 +454,7 @@ async def hypertrade_webhook(
         )
     
     # Finally: build a response.
-    response = _build_response(payload, signal=signal, side=side, symbol=symbol, result=result)
+    response = _build_response(payload, signal=signal, side=side, symbol=traded_symbol, result=result)
 
     if idempotency is not None:
         # complete() persists the plain dict body for replay; _build_response must return a dict (not a Response object).

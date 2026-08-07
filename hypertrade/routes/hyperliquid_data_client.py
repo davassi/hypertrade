@@ -10,6 +10,7 @@ from typing import Any, Dict, Tuple, Optional
 import requests
 from hypertrade.config import get_settings
 from .hyperliquid_errors import HyperliquidValidationError, translate_request_errors
+from .symbols import canonical_symbol as resolve_against_universe
 
 log = logging.getLogger("uvicorn.error")
 
@@ -98,6 +99,25 @@ class HyperliquidDataClient:
         universe, _ = self._fetch_meta_and_asset_ctxs(self._dex_of(symbol))
         idx = self._symbol_to_idx(symbol, universe)
         return universe[idx]
+
+    def canonical_symbol(self, symbol: str) -> str:
+        """Return the venue's exact spelling for a symbol (dex-aware).
+
+        Hyperliquid is case-sensitive and its universe holds lower-case
+        k-contracts (kFLOKI) next to genuinely upper-case K names (KAITO), so a
+        lookup is the only way to repair a corrupted spelling. Reuses the
+        per-dex meta memo, so on a path that already fetches meta this costs no
+        extra round-trip.
+
+        A universe fetch failure propagates rather than degrading to a guess:
+        the guess would reach the exchange, and a wrong one comes back as
+        'not found' — a validation error the webhook retry loop treats as
+        permanent. Letting the transport error through keeps it retryable.
+        """
+        universe, _ = self._fetch_meta_and_asset_ctxs(self._dex_of(symbol))
+        return resolve_against_universe(
+            symbol, [asset["name"] for asset in universe]
+        )
 
     def get_all_mids(self) -> Dict[str, float]:
         """Return a mapping of non-index symbols to their mid prices."""

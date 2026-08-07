@@ -122,11 +122,10 @@ class HyperliquidService:
         if not request.symbol:
             raise HyperliquidValidationError("Symbol required")
 
-        # Preserve the case of dex-qualified (HIP-3) coins like "xyz:NVDA": the dex
-        # prefix is case-sensitive on Hyperliquid. Uppercasing it to "XYZ:NVDA" breaks
-        # the dex meta lookup (metaAndAssetCtxs dex="XYZ" 500s) and name_to_asset.
-        # Plain coins (BTC, eth) are still uppercased.
-        symbol = request.symbol if ":" in request.symbol else request.symbol.upper()
+        # Resolve the spelling against the venue universe BEFORE anything is keyed
+        # by it: Hyperliquid is case-sensitive, and every call below names the asset
+        # by this exact string (mid/mark/meta, the leverage update, the order).
+        symbol = self.client.data.canonical_symbol(request.symbol)
 
         # ===================================================================
         # Fresh data right before trading
@@ -301,6 +300,11 @@ class HyperliquidService:
                 )
                 raise HyperliquidAPIError(f"Unexpected order status: {status}")
 
+        # Surface the spelling actually sent to the exchange. The caller resolved
+        # its own (venue-less) version of the symbol before this call, so the two
+        # can differ — and a caller that records ITS version names a coin that was
+        # never traded, which is how the desk's reconciler reports an orphan.
+        res["symbol"] = symbol
         return res
 
     def find_order_by_cloid(self, cloid: str) -> Optional[dict]:

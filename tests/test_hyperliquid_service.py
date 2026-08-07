@@ -17,6 +17,7 @@ import pytest
 
 from hypertrade.routes.hyperliquid_service import HyperliquidService, OrderRequest
 from hypertrade.routes.hyperliquid_errors import HyperliquidAPIError, HyperliquidValidationError, HyperliquidRejection
+from hypertrade.routes.symbols import normalize_symbol
 from hypertrade.routes.tradingview_enums import Side, SignalType
 
 _FILLED = {"response": {"data": {"statuses": [{"filled": {"avgPx": "100", "totalSz": "1"}}]}}}
@@ -35,6 +36,10 @@ def _service(monkeypatch):
     with patch("hypertrade.routes.hyperliquid_service.HyperliquidExecutionClient"):
         svc = HyperliquidService(base_url="https://test", master_addr="0xM", api_wallet_priv="k")
     client = svc.client
+    # Faithful stand-in for the real lookup: with no universe to consult, the
+    # data client falls back to exactly this rule, so tests that do not care
+    # about spelling still see the venue-shaped symbol.
+    client.data.canonical_symbol.side_effect = normalize_symbol
     client.data.get_mid.return_value = 100.0
     client.data.get_mark.return_value = 100.0
     client.data.get_meta.return_value = {"maxLeverage": 10, "szDecimals": 3}
@@ -358,3 +363,85 @@ def test_no_response_logs_context(monkeypatch, caplog):
     assert "symbol=SOL" in msg and "req_id=req-456" in msg and ("cloid=0x" + "b" * 32) in msg
     assert "side=buy" in msg
     assert "size=1" in msg
+
+
+def test_place_order_uses_the_venue_spelling_for_every_exchange_call(monkeypatch):
+    """The spelling that reaches the exchange must be the venue's, not the caller's.
+
+    'KFLOKI' does not exist on Hyperliquid — 'kFLOKI' does — and every downstream
+    call is keyed by that string: get_mid/get_mark/get_meta resolve it against the
+    universe, update_leverage sets margin on it, and market_order trades it. A
+    single un-canonicalised hop is a rejected order (AZTEC/kFLOKI, 2026-08-07) or,
+    worse, the wrong market.
+    """
+    svc, client = _service(monkeypatch)
+    # Stand in for the real universe lookup: the venue knows only 'kFLOKI'.
+    client.data.canonical_symbol.side_effect = (
+        lambda s: "kFLOKI" if s.casefold() == "kfloki" else s
+    )
+
+    svc.place_order(OrderRequest(
+        symbol="KFLOKI", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("12513"), price=Decimal("0.02135"), leverage=3,
+    ))
+
+    client.data.get_mid.assert_called_with("kFLOKI")
+    client.data.get_mark.assert_called_with("kFLOKI")
+    client.data.get_meta.assert_called_with("kFLOKI")
+    assert client.update_leverage.call_args.args[1] == "kFLOKI"
+    assert client.market_order.call_args.kwargs["symbol"] == "kFLOKI"
+
+
+def test_place_order_canonicalises_a_close_before_flattening(monkeypatch):
+    """A CLOSE must resolve spelling too — an EXIT that cannot name its own coin
+    strands an open position, the worst failure mode for live money."""
+    svc, client = _service(monkeypatch)
+    client.data.canonical_symbol.side_effect = (
+        lambda s: "kFLOKI" if s.casefold() == "kfloki" else s
+    )
+
+    svc.place_order(OrderRequest(
+        symbol="KFLOKI", side=Side.SELL, signal=SignalType.CLOSE_LONG,
+        qty=Decimal("12513"), price=Decimal("0.02135"), leverage=3,
+    ))
+
+    assert client.close_position.call_args.kwargs["symbol"] == "kFLOKI"
+
+
+def test_place_order_reports_the_symbol_it_actually_traded(monkeypatch):
+    """The result must name the coin the exchange filled, not the one requested.
+
+    place_order resolves spelling against the venue, so the caller's string and
+    the traded string can differ. If the caller then records its own version,
+    the desk's ledger names a coin that was never traded and its reconciler
+    reports an orphan — the divergence-pause class this daemon exists to avoid.
+    """
+    svc, client = _service(monkeypatch)
+    client.data.canonical_symbol.side_effect = (
+        lambda s: "kFLOKI" if s.casefold() == "kfloki" else s
+    )
+
+    res = svc.place_order(OrderRequest(
+        symbol="kfloki", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("12513"), price=Decimal("0.02135"), leverage=3,
+    ))
+
+    assert res["symbol"] == "kFLOKI"
+
+
+def test_resting_order_also_reports_the_traded_symbol(monkeypatch):
+    """A resting (unfilled) order still names the coin it was placed on."""
+    svc, client = _service(monkeypatch)
+    client.data.canonical_symbol.side_effect = (
+        lambda s: "kFLOKI" if s.casefold() == "kfloki" else s
+    )
+    client.market_order.return_value = {
+        "response": {"data": {"statuses": [{"resting": {"oid": 1}}]}}
+    }
+
+    res = svc.place_order(OrderRequest(
+        symbol="KFLOKI", side=Side.BUY, signal=SignalType.OPEN_LONG,
+        qty=Decimal("12513"), price=Decimal("0.02135"), leverage=3,
+    ))
+
+    assert res["symbol"] == "kFLOKI"

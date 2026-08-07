@@ -19,6 +19,8 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch
 
+from hypertrade.routes.symbols import normalize_symbol
+
 
 BASE_PAYLOAD = {
     "general": {
@@ -61,6 +63,9 @@ class StubHyperliquidService:
     # exercise the full retry-then-fail path rather than short-circuiting.
     find_order_result = None
     find_order_calls = 0
+    # When set, the spelling the (real) service would report having traded after
+    # resolving the caller's symbol against the venue universe.
+    traded_symbol = None
 
     def __init__(self, *args, **kwargs):
         pass
@@ -89,7 +94,10 @@ class StubHyperliquidService:
         return {
             "status": "ok",
             "order_id": "test-order",
-            "symbol": getattr(request.symbol, "upper", lambda: request.symbol)(),
+            # Mirror the real service: it reports the spelling it traded, which is
+            # the caller's symbol resolved against the venue. With no venue here,
+            # the resolution degrades to exactly the lexical rule.
+            "symbol": type(self).traded_symbol or normalize_symbol(request.symbol),
             "side": getattr(getattr(request.side, "value", request.side), "upper", lambda: request.side)(),
             "qty": str(getattr(request, "qty", "")),
             "price": str(getattr(request, "price", "")),
@@ -107,6 +115,7 @@ class StubHyperliquidService:
         cls.call_count = 0
         cls.find_order_result = None
         cls.find_order_calls = 0
+        cls.traded_symbol = None
 
 
 def make_app(monkeypatch, *, secret: str | None = None):
@@ -909,6 +918,58 @@ def test_dex_qualified_symbol_preserves_case(monkeypatch):
     assert resp2.status_code == 200, resp2.text
     assert resp2.json()["symbol"] == "LINK"
     assert StubHyperliquidService.last_order_request.symbol == "LINK"
+
+
+def test_k_contract_base_reaches_the_order_with_its_lowercase_k(monkeypatch):
+    """Hyperliquid's 1000x contracts spell the k prefix in LOWERCASE.
+
+    Upper-casing 'kFLOKI' to 'KFLOKI' names a coin that does not exist, which is
+    exactly how the AZTEC/kFLOKI entry was rejected in production on
+    2026-08-07: the desk sent the venue spelling and the daemon destroyed it.
+    A lexical rule cannot repair this downstream either — KAS and KAITO are
+    genuinely upper-case K names in the same universe.
+    """
+    StubHyperliquidService.reset()
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["currency"]["base"] = "kFLOKI"
+    resp = client.post("/webhook", json=payload)
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["symbol"] == "kFLOKI"
+    assert StubHyperliquidService.last_order_request.symbol == "kFLOKI"
+
+
+def test_reports_and_persists_the_symbol_the_exchange_actually_traded(monkeypatch):
+    """What we tell the desk, and what we write down, must be what we traded.
+
+    This handler resolves spelling without the venue (no client exists yet), so
+    its answer is best-effort; place_order then resolves against the universe and
+    can legitimately reach a different string. Reporting our own version instead
+    names a coin that was never traded, and the desk's reconciler sees an orphan.
+    """
+    StubHyperliquidService.reset()
+    StubHyperliquidService.traded_symbol = "kFLOKI"
+    app = make_app(monkeypatch, secret="secret")
+    client = TestClient(app)
+
+    seen = {o["request_id"] for o in app.state.db.get_orders(limit=1000)}
+
+    payload = copy.deepcopy(BASE_PAYLOAD)
+    payload["currency"]["base"] = "kfloki"  # free text the lexical rule can only guess at
+    resp = client.post("/webhook", json=payload)
+
+    assert resp.status_code == 200, resp.text
+    # What the handler could resolve on its own, and did ask for:
+    assert StubHyperliquidService.last_order_request.symbol == "KFLOKI"
+    # What must be reported and recorded — the venue's spelling:
+    assert resp.json()["symbol"] == "kFLOKI"
+    # The order store is shared across the suite, so look only at what this
+    # request added.
+    written = [o for o in app.state.db.get_orders(limit=1000) if o["request_id"] not in seen]
+    assert [o["symbol"] for o in written] == ["kFLOKI"]
 
 
 def test_order_request_carries_req_id(monkeypatch):

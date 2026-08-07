@@ -30,7 +30,7 @@ The payload has four required objects: `general`, `currency`, `order`, `market`.
 | | `secret` | ➖ | string | Required **only** if `HYPERTRADE_WEBHOOK_SECRET` is set (see §4). |
 | | `leverage` | ➖ | string | `"3x"`, `"3X"` or `"3"` → parsed to int. Invalid → `400`. |
 | | `nonce` | ➖ | string | Idempotency key; unique per order, reused on retry. Required when `HYPERTRADE_IDEMPOTENCY_ENABLED=true` (default). |
-| `currency` | `base` | ✅ | string | **Drives the traded symbol**: `symbol = base.upper()`. |
+| `currency` | `base` | ✅ | string | **Drives the traded symbol.** Case is preserved and resolved against the Hyperliquid universe — send the venue's own spelling, especially for the lower-case k-contracts (`kPEPE`, `kSHIB`, `kBONK`, `kLUNC`, `kFLOKI`, `kDOGS`, `kNEIRO`). An all-lower-case base is treated as free text and upper-cased. |
 | | `quote` | ➖ | string | Informational. |
 | `order` | `action` | ✅ | `"buy"` \| `"sell"` | One half of the signal derivation. |
 | | `contracts` | ✅ | string \| number | Order quantity. |
@@ -44,7 +44,16 @@ The payload has four required objects: `general`, `currency`, `order`, `market`.
 | | `previous_position_size` | ✅ | string \| number | Informational. |
 
 > **The traded symbol comes from `currency.base`, not `general.ticker`.**
-> `general.ticker` is only logged. (`hypertrade/routes/webhooks.py` → `symbol = payload.currency.base.upper()`.)
+> `general.ticker` is only logged. (`hypertrade/routes/webhooks.py` →
+> `symbol = normalize_symbol(payload.currency.base)`, then `place_order` resolves
+> that against the venue universe.)
+>
+> **Hyperliquid is case-sensitive.** Its universe holds lower-case k-contracts
+> (`kFLOKI`) next to genuinely upper-case K names (`KAS`, `KAITO`), so no lexical
+> rule can repair a corrupted spelling — only the universe can. The daemon does
+> resolve a mis-cased base, but that repair is unavailable in dry-run, so send the
+> venue spelling. The response and the persisted order row report the spelling
+> **actually traded**, which may differ from the one you sent.
 
 ---
 
